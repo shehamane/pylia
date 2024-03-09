@@ -1,0 +1,170 @@
+statements: statement+
+
+statement: compound_stmt  | simple_stmt NEWLINE
+
+simple_stmt:
+    | assignment
+    | expressions
+    | return_stmt
+    | 'pass'
+    | 'break'
+    | 'continue'
+
+compound_stmt:
+    | function_def
+    | if_stmt
+    | for_stmt
+    | while_stmt
+
+assignment:
+    | ','.(declaration)+ '=' expressions
+
+declaration:
+    | NAME [annotation]
+
+return_stmt:
+    | 'return' [expressions]
+
+block:
+    | NEWLINE INDENT statements DEDENT
+
+function_def:
+    | 'def' NAME '(' [params] ')' ['->' expression ] ':'  block
+
+params:
+    | ','.param+
+
+param: NAME [annotation]
+annotation: ':' expression
+
+
+if_stmt:
+    | 'if' expression ':' block elif_stmt
+    | 'if' expression ':' block [else_block]
+elif_stmt:
+    | 'elif' expression ':' block elif_stmt
+    | 'elif' expression ':' block [else_block]
+else_block:
+    | 'else' ':' block
+
+
+
+while_stmt:
+    | 'while' expression ':' block [else_block]
+
+for_stmt:
+    | 'for' NAME 'in' expressions ':' block [else_block]
+
+
+expressions:
+    | expression (',' NEWLINE* expression )+
+    | expression
+
+expression:
+    | disjunction
+
+disjunction:
+    | conjunction ('or' conjunction )+
+    | conjunction
+
+conjunction:
+    | inversion ('and' inversion )+
+    | inversion
+
+inversion:
+    | 'not' inversion
+    | comparison
+
+comparison:
+    | sum comparison_
+    | sum
+
+comparison_:
+    | '==' sum comparison_
+    | '!=' sum comparison_
+    | '<' sum comparison_
+    | '>' sum comparison_
+    | '<=' sum comparison_
+    | '>=' sum comparison_
+    | 'in' sum comparison_
+    | 'not' 'in' sum comparison_
+    | '==' sum
+    | '!=' sum
+    | '<' sum
+    | '>' sum
+    | '<=' sum
+    | '>=' sum
+    | 'in' sum
+    | 'not' 'in' sum
+
+sum:
+    | term sum_
+    | term
+
+sum_:
+    | '+' term sum_
+    | '-' term sum_
+    | '+' term
+    | '-' term
+
+term:
+    | factor term_
+    | factor
+
+term_:
+    | '*' factor term_
+    | '/' factor term_
+    | '//' factor term_
+    | '%' factor term_
+    | '*' factor
+    | '/' factor
+    | '//' factor
+    | '%' factor
+
+factor:
+    | '+' factor
+    | '-' factor
+    | power
+
+power:
+    | primary '**' factor
+    | primary
+
+primary:
+    | atom primary_
+    | atom
+
+primary_:
+    | '.' NAME primary_
+    | '(' [arguments] ')' primary_
+    | '[' slices ']' primary_
+    | '.' NAME
+    | '(' [arguments] ')'
+    | '[' slices ']'
+
+
+arguments:
+    | expression
+    | ','.(expression)+
+
+slices:
+    | slice
+    | ','.(slice)+
+
+slice:
+    | [expression] ':' [expression] [':' [expression]]
+
+
+atom:
+    | NAME
+    | 'True'
+    | 'False'
+    | 'None'
+    | NUMBER
+    | group
+    | list
+
+group:
+    | '(' expressions ')'
+
+list: '[' expressions ']'
