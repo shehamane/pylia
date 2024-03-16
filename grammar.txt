@@ -16,52 +16,42 @@ compound_stmt:
     | for_stmt
     | while_stmt
 
-assignment:
-    | ','.(declaration)+ '=' expressions
+assignment: ','.(declaration)+ '=' expressions
 
-declaration:
-    | NAME [annotation]
+declaration: NAME [annotation]
 
-return_stmt:
-    | 'return' [expressions]
+return_stmt: 'return' [expressions]
 
-block:
-    | NEWLINE INDENT statements DEDENT
+block: NEWLINE INDENT statements DEDENT
 
-function_def:
-    | 'def' NAME '(' [params] ')' ['->' expression ] ':'  block
+function_def: 'def' NAME '(' [params] ')' ['->' expression ] ':'  block
 
-params:
-    | ','.param+
+params: ','.param+
 
 param: NAME [annotation]
-annotation: ':' expression
 
+annotation: ':' expression
 
 if_stmt:
     | 'if' expression ':' block elif_stmt
     | 'if' expression ':' block [else_block]
+
 elif_stmt:
     | 'elif' expression ':' block elif_stmt
     | 'elif' expression ':' block [else_block]
-else_block:
-    | 'else' ':' block
 
+else_block: 'else' ':' block
 
+while_stmt: 'while' expression ':' block [else_block]
 
-while_stmt:
-    | 'while' expression ':' block [else_block]
-
-for_stmt:
-    | 'for' NAME 'in' expressions ':' block [else_block]
+for_stmt: 'for' NAME 'in' expressions ':' block [else_block]
 
 
 expressions:
     | expression (',' NEWLINE* expression )+
     | expression
 
-expression:
-    | disjunction
+expression: disjunction
 
 disjunction:
     | conjunction ('or' conjunction )+
@@ -163,6 +153,10 @@ atom:
     | NUMBER
     | group
     | list
+
+numpy: 'np' '.' function
+
+function: FUNC '(' arguments ')'
 
 group:
     | '(' expressions ')'

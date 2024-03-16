@@ -17,63 +17,73 @@ class Parser:
     def _sym(self):
         return self.seq[self.i]
 
+    def expect(self, type_, attr, message):
+        if isinstance(self._sym(), type_) and (attr is None or self._sym().attr == attr):
+            self._next()
+        else:
+            raise Exception(message)
+
     def statements(self):
+        # statements: statement+
         node = StatementsNode()
 
         node.statements.append(self.statement())
 
-        while isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), AtomKeywordToken) or \
-                isinstance(self._sym(), SimpleStmtKeywordToken) or \
-                isinstance(self._sym(), SumOperatorToken) or \
-                isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), NumberToken) or \
+        while type(self._sym()) in (IdentifierToken, AtomKeywordToken,
+                                    SimpleStmtKeywordToken, SumOperatorToken,
+                                    IdentifierToken, NumberToken,
+                                    IntegerToken, FloatToken,
+                                    FunctionToken, NumpyToken,
+                                    CompoundStmtKeywordToken) or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[' or \
-                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return' or \
-                isinstance(self._sym(), KeywordToken) and self._sym().attr in ('def', 'if', 'for', 'while') or \
-                isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return':
             node.statements.append(self.statement())
+
         return node
 
     def statement(self):
+        # statement: compound_stmt  | simple_stmt NEWLINE
         node = StatementNode()
 
-        if isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), AtomKeywordToken) or \
-                isinstance(self._sym(), SimpleStmtKeywordToken) or \
-                isinstance(self._sym(), SumOperatorToken) or \
-                isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), NumberToken) or \
+        if type(self._sym()) in (IdentifierToken, AtomKeywordToken,
+                                 SimpleStmtKeywordToken, SumOperatorToken,
+                                 IdentifierToken, NumberToken,
+                                 IntegerToken, FloatToken,
+                                 FunctionToken, NumpyToken) or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[' or \
-                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return' or \
-                isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return':
             node.statement = self.simple_statement()
         elif isinstance(self._sym(), CompoundStmtKeywordToken):
             node.statement = self.compound_stmt()
         else:
-            raise Exception('Statement parsing error')
+            raise Exception('Statement parsing error: Keyword expected')
+
         return node
 
     def simple_statement(self):
+        # simple_stmt:
+        # | assignment
+        # | expressions
+        # | return_stmt
+        # | 'pass'
+        # | 'break'
+        # | 'continue'
         node = SimpleStatementNode()
 
         if isinstance(self._sym(), IdentifierToken) and \
                 isinstance(self.seq[self.i + 1], DelimiterToken) and self.seq[self.i + 1].attr in ('=', ',', ':'):
             node.simple_statement = self.assigment()
-
-
         elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return':
             node.simple_statement = self.return_stmt()
         elif isinstance(self._sym(), SimpleStmtKeywordToken):
             node.simple_statement = self._sym()
             self._next()
-        elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
-                isinstance(self._sym(), SumOperatorToken) or \
-                isinstance(self._sym(), AtomKeywordToken) or \
-                isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), NumberToken) or \
-                isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[' or \
-                isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
+        elif type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
+                                   IdentifierToken, NumberToken,
+                                   IntegerToken, FloatToken,
+                                   FunctionToken, NumpyToken) or \
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[':
             node.simple_statement = self.expressions()
         else:
             raise Exception('Simple statement parsing error')
@@ -82,9 +92,11 @@ class Parser:
             self._next()
         elif not isinstance(self._sym(), DedentToken) and not isinstance(self._sym(), EofToken):
             raise Exception('Simple statements must be divided by newlines')
+
         return node
 
     def assigment(self):
+        # assignment: ','.(declaration)+ '=' expressions
         node = AssignmentNode()
 
         if isinstance(self._sym(), IdentifierToken):
@@ -94,37 +106,47 @@ class Parser:
                 self._next()
                 node.declarations.append(self.declaration())
         else:
-            raise Exception('Name parsing error')
+            raise Exception('Assignment parsing error: Declaration expected')
 
         if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '=':
             self._next()
             node.expressions = self.expressions()
         else:
-            raise Exception('Assignment parsing error')
+            raise Exception('Assignment parsing error: Symbol "=" expected')
         return node
 
     def declaration(self):
+        # declaration: NAME [annotation]
+        # annotation: ':' expression
         node = DeclarationNode()
 
         if isinstance(self._sym(), IdentifierToken):
             node.name = self._sym().attr
             self._next()
+        else:
+            raise Exception('Declaration parsing error: Identifier expected')
         if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
             self._next()
             node.annotation = self.expression()
         return node
 
     def return_stmt(self):
+        # return_stmt: 'return' [expressions]
         node = ReturnStatementNode()
         if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return':
             self._next()
 
             node.expressions = self.expressions()
         else:
-            raise Exception('Return statement parsing error')
+            raise Exception('Return statement parsing error: Keyword "return" expected')
         return node
 
     def compound_stmt(self):
+        # compound_stmt:
+        # | function_def
+        # | if_stmt
+        # | for_stmt
+        # | while_stmt
         node = CompoundStatementNode()
         if isinstance(self._sym(), KeywordToken):
             if self._sym().attr == 'def':
@@ -136,12 +158,13 @@ class Parser:
             elif self._sym().attr == 'while':
                 node.compound_statement = self.while_stmt()
             else:
-                raise Exception('Compound statement parsing error')
+                raise Exception('Compound statement parsing error: Keyword expected')
         else:
-            raise Exception('Compound statement parsing error')
+            raise Exception('Compound statement parsing error: Keyword expected')
         return node
 
     def params(self):
+        # params: ','.param+
         node = ParamsNode()
         node.params.append(self.param())
 
@@ -151,6 +174,7 @@ class Parser:
         return node
 
     def param(self):
+        # param: NAME [annotation]
         node = ParamNode()
 
         if isinstance(self._sym(), IdentifierToken):
@@ -161,144 +185,152 @@ class Parser:
                 self._next()
                 node.annotation = self.expression()
         else:
-            raise Exception('Function parameter parsing error')
+            raise Exception('Function parameter parsing error: Identifier expected')
         return node
 
     def function_def(self):
+        # function_def: 'def' NAME '(' [params] ')' ['->' expression ] ':'  block
         node = FunctionDefNode()
 
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'def':
+        self.expect(CompoundStmtKeywordToken, 'def', 'Function definition parsing error: Keyword "def" expected')
+
+        if isinstance(self._sym(), IdentifierToken):
+            node.name = self._sym()
             self._next()
+
+            self.expect(DelimiterToken, '(', 'Function definition parsing: Symbol "(" expected')
+
             if isinstance(self._sym(), IdentifierToken):
-                node.name = self._sym()
+                node.params = self.params()
+
+            self.expect(DelimiterToken, ')', 'Function definition parsing: Symbol ")" expected')
+
+            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '->':
                 self._next()
-                if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '(':
-                    self._next()
+                node.return_type = self.expression()
 
-                    if isinstance(self._sym(), IdentifierToken):
-                        node.params = self.params()
+            self.expect(DelimiterToken, ':', 'Function definition parsing: Symbol ":" expected')
 
-                    if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ')':
-                        self._next()
+            node.block = self.block()
 
-                        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '->':
-                            self._next()
-                            node.return_type = self.expression()
-                        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
-                            self._next()
-                            node.block = self.block()
-                        else:
-                            raise Exception('Function block parsing error')
-                else:
-                    raise Exception('Function signature parsing error')
-            else:
-                raise Exception('Function name parsing error')
         else:
-            raise Exception('Function define parsing error')
+            raise Exception('Function definition parsing error: Identifier expected')
+
         return node
 
     def if_stmt(self):
+        # if_stmt:
+        #     | 'if' expression ':' block elif_stmt
+        #     | 'if' expression ':' block [else_block]
         node = IfStatementNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'if':
-            self._next()
-            node.condition = self.expression()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
-                self._next()
-                node.block = self.block()
 
-                if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'elif':
-                    node.else_block = self.elif_stmt()
-                elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
-                    node.else_block = self.else_block()
-            else:
-                raise Exception('If statement parsing error')
-        else:
-            raise Exception('If statement parsing error')
+        self.expect(CompoundStmtKeywordToken, 'if', '"if"-statement parsing error: Keyword "if" expected')
+
+        node.condition = self.expression()
+
+        self.expect(DelimiterToken, ':', '"if"-statement parsing error: Symbol ":" expected')
+
+        node.block = self.block()
+
+        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'elif':
+            node.else_block = self.elif_stmt()
+        elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
+            node.else_block = self.else_block()
+
         return node
 
     def elif_stmt(self):
+        # elif_stmt:
+        #     | 'elif' expression ':' block elif_stmt
+        #     | 'elif' expression ':' block [else_block]
         node = ElifStatementNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'elif':
-            self._next()
-            node.condition = self.expression()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
-                self._next()
-                node.block = self.block()
 
-                if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'elif':
-                    node.else_block = self.elif_stmt()
-                elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
-                    node.else_block = self.else_block()
+        self.expect(KeywordToken, 'elif', '"elif"-statement parsing error: Keyword "elif" expected')
+
+        node.condition = self.expression()
+
+        self.expect(DelimiterToken, ':', '"elif"-statement parsing error: Symbol ":" expected')
+
+        node.block = self.block()
+
+        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'elif':
+            node.else_block = self.elif_stmt()
+        elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
+            node.else_block = self.else_block()
+
         return node
 
     def for_stmt(self):
+        # for_stmt: 'for' NAME 'in' expressions ':' block [else_block]
         node = ForStatementNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'for':
+
+        self.expect(CompoundStmtKeywordToken, 'for', '"for"-loop parsing error: Keyword "for" expected')
+
+        if isinstance(self._sym(), IdentifierToken):
+            node.name = self._sym()
             self._next()
-            if isinstance(self._sym(), IdentifierToken):
-                node.name = self._sym()
-                self._next()
-                if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'in':
-                    self._next()
-                    node.expressions = self.expressions()
-                    if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
-                        self._next()
-                        node.block = self.block()
-                        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
-                            node.else_block = self.else_block()
-                    else:
-                        raise Exception('For statement block parsing error')
-                else:
-                    raise Exception('For statement condition parsing error')
-            else:
-                raise Exception('For statement condition parsing error')
+
+            self.expect(KeywordToken, 'in', '"for"-loop parsing error: Keyword "in" expected')
+
+            node.expressions = self.expressions()
+
+            self.expect(DelimiterToken, ':', '"for"-loop parsing error: Symbol ":" expected')
+
+            node.block = self.block()
+
+            if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
+                node.else_block = self.else_block()
         else:
-            raise Exception('For statement parsing error')
+            raise Exception('For statement parsing error: Identifier expected')
+
         return node
 
     def while_stmt(self):
+        # while_stmt: 'while' expression ':' block [else_block]
         node = WhileStatementNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'while':
-            self._next()
-            node.condition = self.expression()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
-                self._next()
-                node.block = self.block()
-                if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
-                    node.else_block = self.else_block()
+
+        self.expect(CompoundStmtKeywordToken, 'while', '"while"-loop parsing error: Keyword "while" expected')
+
+        node.condition = self.expression()
+
+        self.expect(DelimiterToken, ':', '"while"-loop parsing error: Symbol ":" expected')
+
+        node.block = self.block()
+        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
+            node.else_block = self.else_block()
+
         return node
 
     def block(self):
+        # block: NEWLINE INDENT statements DEDENT
         node = BlockNode()
-        if isinstance(self._sym(), NewlineToken):
-            self._next()
-            if isinstance(self._sym(), IndentToken):
-                self._next()
-                node.statements = self.statements()
-                if isinstance(self._sym(), DedentToken):
-                    self._next()
-                else:
-                    raise Exception('Dedentation parsing error')
-            else:
-                raise Exception('Indentation parsing error')
-        else:
-            raise Exception('Newline parsing error')
+
+        self.expect(NewlineToken, None, 'Block parsing error: Newline expected')
+
+        self.expect(IndentToken, None, 'Block parsing error: Indentation expected')
+
+        node.statements = self.statements()
+
+        self.expect(DedentToken, None, 'Block parsing error: Dedentation expected')
+
         return node
 
     def else_block(self):
+        # else_block: 'else' ':' block
         node = ElseBlockNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'else':
-            self._next()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
-                self._next()
-                node.block = self.block()
-            else:
-                raise Exception('Else block parsing error')
-        else:
-            raise Exception('Else block parsing error')
+
+        self.expect(KeywordToken, 'else', '"Else"-block parsing error: Keyword "else" expected')
+
+        self.expect(DelimiterToken, ':', '"Else"-block parsing error: Symbol ":" expected')
+
+        node.block = self.block()
+
         return node
 
     def expressions(self):
+        # expressions:
+        #     | expression (',' NEWLINE* expression )+
+        #     | expression
         node = ExpressionsNode()
         node.expressions.append(self.expression())
 
@@ -308,20 +340,25 @@ class Parser:
         return node
 
     def expression(self):
+        # expression: disjunction
         node = ExpressionNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
-                isinstance(self._sym(), SumOperatorToken) or \
-                isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), AtomKeywordToken) or \
-                isinstance(self._sym(), NumberToken) or \
-                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{') or \
-                isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
+
+        if type(self._sym()) in (SumOperatorToken, IdentifierToken,
+                                 AtomKeywordToken, NumberToken,
+                                 IntegerToken, FloatToken,
+                                 FunctionToken, NumpyToken) or \
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
             node.disjunction = self.disjunction()
         else:
             raise Exception('Expression parsing error')
+
         return node
 
     def disjunction(self):
+        # disjunction:
+        #     | conjunction ('or' conjunction )+
+        #     | conjunction
         node = DisjunctionNode()
         node.conjuctions.append(self.conjunction())
 
@@ -331,6 +368,9 @@ class Parser:
         return node
 
     def conjunction(self):
+        # conjunction:
+        #     | inversion ('and' inversion )+
+        #     | inversion
         node = ConjunctionNode()
         node.inverstions.append(self.inversion())
 
@@ -340,6 +380,9 @@ class Parser:
         return node
 
     def inversion(self):
+        # inversion:
+        #     | 'not' inversion
+        #     | comparison
         node = InversionNode()
         if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not':
             self._next()
@@ -349,6 +392,9 @@ class Parser:
         return node
 
     def comparison(self):
+        # comparison:
+        #     | sum comparison_
+        #     | sum
         node = ComparisonNode()
         node.sum = self.sum()
 
@@ -357,13 +403,30 @@ class Parser:
         return node
 
     def comparison_(self):
+        # comparison_:
+        #     | '==' sum comparison_
+        #     | '!=' sum comparison_
+        #     | '<' sum comparison_
+        #     | '>' sum comparison_
+        #     | '<=' sum comparison_
+        #     | '>=' sum comparison_
+        #     | 'in' sum comparison_
+        #     | 'not' 'in' sum comparison_
+        #     | '==' sum
+        #     | '!=' sum
+        #     | '<' sum
+        #     | '>' sum
+        #     | '<=' sum
+        #     | '>=' sum
+        #     | 'in' sum
+        #     | 'not' 'in' sum
         node = ComparisonNode_()
 
         if isinstance(self._sym(), ComparisonOperatorToken):
             node.op = self._sym()
             self._next()
         else:
-            raise Exception('Comparison parsing error')
+            raise Exception('Comparison parsing error: Operator expected')
 
         node.sum = self.sum()
 
@@ -372,6 +435,9 @@ class Parser:
         return node
 
     def sum(self):
+        # sum:
+        #     | term sum_
+        #     | term
         node = SumNode()
         node.term = self.term()
 
@@ -380,13 +446,18 @@ class Parser:
         return node
 
     def sum_(self):
+        # sum_:
+        #     | '+' term sum_
+        #     | '-' term sum_
+        #     | '+' term
+        #     | '-' term
         node = SumNode_()
 
         if isinstance(self._sym(), SumOperatorToken):
             node.op = self._sym()
             self._next()
         else:
-            raise Exception('Sum parsing error')
+            raise Exception('Sum parsing error: Operator expected')
         node.term = self.term()
 
         if isinstance(self._sym(), SumOperatorToken):
@@ -395,6 +466,9 @@ class Parser:
         return node
 
     def term(self):
+        # term:
+        #     | factor term_
+        #     | factor
         node = TermNode()
         node.factor = self.factor()
 
@@ -403,13 +477,22 @@ class Parser:
         return node
 
     def term_(self):
+        # term_:
+        #     | '*' factor term_
+        #     | '/' factor term_
+        #     | '//' factor term_
+        #     | '%' factor term_
+        #     | '*' factor
+        #     | '/' factor
+        #     | '//' factor
+        #     | '%' factor
         node = TermNode_()
 
         if isinstance(self._sym(), MulOperatorToken):
             node.op = self._sym()
             self._next()
         else:
-            raise Exception('Mul parsing error')
+            raise Exception('Mul parsing error: Operator expected')
         node.factor = self.factor()
 
         if isinstance(self._sym(), MulOperatorToken):
@@ -417,6 +500,10 @@ class Parser:
         return node
 
     def factor(self):
+        # factor:
+        #     | '+' factor
+        #     | '-' factor
+        #     | power
         node = FactorNode()
         if isinstance(self._sym(), SumOperatorToken):
             node.op = self._sym()
@@ -425,6 +512,9 @@ class Parser:
         return node
 
     def power(self):
+        # power:
+        #     | primary '**' factor
+        #     | primary
         node = PowerNode()
         node.primary = self.primary()
         if isinstance(self._sym(), OperatorToken) and self._sym().attr == '**':
@@ -433,6 +523,9 @@ class Parser:
         return node
 
     def primary(self):
+        # primary:
+        #     | atom primary_
+        #     | atom
         node = PrimaryNode()
         node.atom = self.atom()
 
@@ -441,6 +534,13 @@ class Parser:
         return node
 
     def primary_(self):
+        # primary_:
+        #     | '.' NAME primary_
+        #     | '(' [arguments] ')' primary_
+        #     | '[' slices ']' primary_
+        #     | '.' NAME
+        #     | '(' [arguments] ')'
+        #     | '[' slices ']'
         node = PrimaryNode_()
 
         if isinstance(self._sym(), DelimiterToken):
@@ -450,27 +550,23 @@ class Parser:
                     node.subscript = self._sym()
                     self._next()
                 else:
-                    raise Exception('Subscript parsing error')
+                    raise Exception('Subscript parsing error: Identifier expected')
             elif self._sym().attr == '(':
                 self._next()
 
                 node.arguments = self.arguments()
 
-                if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ')':
-                    self._next()
-                else:
-                    raise Exception('Arguments parsing error')
+                self.expect(DelimiterToken, ')', 'Arguments parsing error: Symbol ")" expected')
             elif self._sym().attr == '[':
                 self._next()
+
                 node.slices = self.slices()
-                if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ']':
-                    self._next()
-                else:
-                    raise Exception('Slices parsing error')
+
+                self.expect(DelimiterToken, ']', 'Slices parsing error: Symbol "]" expected')
             else:
                 raise Exception('Primary_ parsing error')
         else:
-            raise Exception('Primary_ parsing error')
+            raise Exception('Primary_ parsing error: Delimiter expected')
 
         if isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('.', '(', '['):
             node.primary_ = self.primary_()
@@ -478,14 +574,17 @@ class Parser:
         return node
 
     def arguments(self):
+        # arguments:
+        #     | expression
+        #     | ','.(expression)+
         node = ArgumentsNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
-                isinstance(self._sym(), SumOperatorToken) or \
-                isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), AtomKeywordToken) or \
-                isinstance(self._sym(), NumberToken) or \
-                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{') or \
-                isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
+
+        if type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
+                                 NumberToken, IdentifierToken,
+                                 IntegerToken, FloatToken,
+                                 FunctionToken, NumpyToken) or \
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
             node.expressions.append(self.expression())
 
             while isinstance(self._sym(), DelimiterToken) and self._sym().attr == ',':
@@ -496,6 +595,9 @@ class Parser:
         return node
 
     def slices(self):
+        # slices:
+        #     | slice
+        #     | ','.(slice)+
         node = SlicesNode()
         node.slices.append(self.slice())
 
@@ -505,47 +607,57 @@ class Parser:
         return node
 
     def slice(self):
+        # slice:
+        #     | [expression] ':' [expression] [':' [expression]]
         node = SliceNode()
-        if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
-                isinstance(self._sym(), SumOperatorToken) or \
-                isinstance(self._sym(), IdentifierToken) or \
-                isinstance(self._sym(), AtomKeywordToken) or \
-                isinstance(self._sym(), NumberToken) or \
-                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{') or \
-                isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
+
+        if type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
+                                 IdentifierToken, NumberToken,
+                                 IntegerToken, FloatToken,
+                                 FunctionToken, NumpyToken) or \
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
             node.from_expression = self.expression()
+
         if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
             self._next()
-            if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
-                    isinstance(self._sym(), SumOperatorToken) or \
-                    isinstance(self._sym(), IdentifierToken) or \
-                    isinstance(self._sym(), AtomKeywordToken) or \
-                    isinstance(self._sym(), NumberToken) or \
-                    isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{') or \
-                    isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
-                node.from_expression = self.expression()
+            if type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
+                                     IdentifierToken, NumberToken,
+                                     IntegerToken, FloatToken,
+                                     FunctionToken, NumpyToken) or \
+                    isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                    isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
+                node.to_expression = self.expression()
             if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
                 self._next()
-                if isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
-                        isinstance(self._sym(), SumOperatorToken) or \
-                        isinstance(self._sym(), IdentifierToken) or \
-                        isinstance(self._sym(), AtomKeywordToken) or \
-                        isinstance(self._sym(), NumberToken) or \
-                        isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{') or \
-                        isinstance(self._sym(), FunctionToken) or isinstance(self._sym(), NumpyToken):
-                    node.from_expression = self.expression()
+                if type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
+                                         IdentifierToken, NumberToken,
+                                         IntegerToken, FloatToken,
+                                         FunctionToken, NumpyToken) or \
+                        isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                        isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
+                    node.step_expression = self.expression()
         return node
 
     def atom(self):
+        # atom:
+        #     | NAME
+        #     | 'True'
+        #     | 'False'
+        #     | 'None'
+        #     | NUMBER
+        #     | group
+        #     | list
         node = AtomNode()
-        if isinstance(self._sym(), IdentifierToken) or \
-                (isinstance(self._sym(), KeywordToken) and self._sym().attr in ('True', 'False', 'None')) or \
-                isinstance(self._sym(), IntegerToken) or isinstance(self._sym(), FloatToken):
+
+        if type(self._sym()) in (IdentifierToken, AtomKeywordToken,
+                                 NumberToken,
+                                 IntegerToken, FloatToken):
             node.atom = self._sym()
             self._next()
         elif isinstance(self._sym(), DelimiterToken) and self._sym().attr == '(':
             node.atom = self.group()
-        elif isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('[',):
+        elif isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[':
             node.atom = self.list()
         elif isinstance(self._sym(), NumpyToken):
             node.atom = self.numpy()
@@ -556,61 +668,58 @@ class Parser:
         return node
 
     def numpy(self):
+        # numpy: 'np' '.' function
         node = NumpyNode()
-        if isinstance(self._sym(), NumpyToken):
-            self._next()
-        else:
-            raise Exception()
-        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '.':
-            self._next()
-        else:
-            raise Exception()
+
+        self.expect(NumpyToken, None, 'Numpy call parsing error: Keyword "np" expected')
+
+        self.expect(DelimiterToken, '.', 'Numpy call parsing error: Symbol "." expected')
+
         if isinstance(self._sym(), FunctionToken):
             node.function = self.function()
         else:
-            raise Exception()
+            raise Exception("Numpy call parsing error: Function expected")
+
         return node
 
     def function(self):
+        # function: FUNC '(' arguments ')'
         node = BuiltinFunctionNode()
         if isinstance(self._sym(), FunctionToken):
             node.name = self._sym().attr
             self._next()
         else:
-            raise Exception()
-        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '(':
-            self._next()
-            node.arguments = self.arguments()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ')':
-                self._next()
-            else:
-                raise Exception()
-        else:
-            raise Exception
+            raise Exception("Function parsing error: Function name expected")
+
+        self.expect(DelimiterToken, '(', 'Function parsing error: Symbol "(" expected')
+
+        node.arguments = self.arguments()
+
+        self.expect(DelimiterToken, ')', 'Function parsing error: Symbol ")" expected')
+
         return node
 
     def group(self):
+        # group:
+        #     | '(' expressions ')'
         node = GroupNode()
-        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '(':
-            self._next()
-            node.expression = self.expression()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ')':
-                self._next()
-            else:
-                raise Exception('Group parsing error')
-        else:
-            raise Exception('Group parsing error')
+
+        self.expect(DelimiterToken, '(', 'Group parsing error: Symbol "(" expected')
+
+        node.expression = self.expression()
+
+        self.expect(DelimiterToken, ')', 'Group parsing error: Symbol ")" expected')
+
         return node
 
     def list(self):
+        # list: '[' expressions ']'
         node = ListNode()
-        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[':
-            self._next()
-            node.expressions = self.expressions()
-            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ']':
-                self._next()
-            else:
-                raise Exception('List parsing error')
-        else:
-            raise Exception('List parsing error')
+
+        self.expect(DelimiterToken, '[', 'List parsing error: Symbol "[" expected')
+
+        node.expressions = self.expressions()
+
+        self.expect(DelimiterToken, ']', 'List parsing error: Symbol "]" expected')
+
         return node
