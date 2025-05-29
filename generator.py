@@ -102,13 +102,9 @@ class Generator:
     def declaration(self, node: DeclarationNode):
         self.program += self.compiler.get_name(node.name)
 
-        if node.annotation:
+        if node.annotation and isinstance(node.annotation, TypeNode):
             self.program += '::'
-            start = len(self.program)
-            self.expression(node.annotation)
-            type_ = self.program[start:]
-            if type_ in types_map:
-                self.program = self.program[:start] + types_map[type_]
+            self.type(node.annotation)
 
     def return_statement(self, node: ReturnStatementNode):
         self.program += 'return'
@@ -152,13 +148,9 @@ class Generator:
 
     def param(self, node: ParamNode):
         self.program += self.compiler.get_name(node.name.attr)
-        if node.annotation:
+        if node.annotation and isinstance(node.annotation, TypeNode):
             self.program += '::'
-            start = len(self.program)
-            self.expression(node.annotation)
-            type_ = self.program[start:]
-            if type_ in types_map:
-                self.program = self.program[:start] + types_map[type_]
+            self.type(node.annotation)
 
     def if_stmt(self, node: IfStatementNode):
         self.program += 'if'
@@ -400,3 +392,9 @@ class Generator:
         self.program += '['
         self.expressions(node.expressions)
         self.program += ']'
+        
+    def type(self, node: TypeNode):
+        if node.type in types_map:
+            self.program += types_map[node.type]
+        else:
+            raise Exception('Unsupported type')

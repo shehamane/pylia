@@ -127,7 +127,10 @@ class Parser:
             raise Exception('Declaration parsing error: Identifier expected')
         if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
             self._next()
-            node.annotation = self.expression()
+            if isinstance(self._sym(), TypeToken):
+                node.annotation = self.type()
+            else:
+                node.annotation = self.expression()
         return node
 
     def return_stmt(self):
@@ -183,7 +186,10 @@ class Parser:
 
             if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
                 self._next()
-                node.annotation = self.expression()
+                if isinstance(self._sym(), TypeToken):
+                    node.annotation = self.type()
+                else:
+                    node.annotation = self.expression()
         else:
             raise Exception('Function parameter parsing error: Identifier expected')
         return node
@@ -217,6 +223,11 @@ class Parser:
             raise Exception('Function definition parsing error: Identifier expected')
 
         return node
+    
+    def class_def(self):
+        # class_def: 'class' NAME '(' [NAME] ')' ':' block
+        pass
+        
 
     def if_stmt(self):
         # if_stmt:
@@ -722,4 +733,13 @@ class Parser:
 
         self.expect(DelimiterToken, ']', 'List parsing error: Symbol "]" expected')
 
+        return node
+    
+    def type(self):
+        node = TypeNode()
+        if isinstance(self._sym(), TypeToken):
+            node.type = self._sym().attr
+            self._next()
+        else:
+            raise Exception("Function parsing error: Type expected")
         return node

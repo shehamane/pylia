@@ -94,12 +94,14 @@ class DomainTag(Enum):
     NUMPY = 19
     FUNCTION = 20
     DECORATOR = 21
+    TYPE = 22
 
 
 KEYWORDS = ('if', 'else', 'for', 'while', 'continue', 'break', 'elif', 'def', 'class',
             'True', 'False', 'None', 'import', 'and', 'or', 'not', 'async', 'await',
             'as', 'assert', 'del', 'finally', 'except', 'raise', 'pass', 'return',
             'try', 'with', 'yield', 'from', 'global', 'lambda', 'is', 'in')
+TYPES = ('int', 'float', 'str', 'list', 'dict')
 ATOM_KEYWORDS = ('None', 'True', 'False')
 SIMPLE_STMT_KEYWORDS = ('pass', 'break', 'continue')
 COMPOUND_STMT_KEYWORDS = ('def', 'for', 'while', 'if')
@@ -175,6 +177,11 @@ class FunctionToken(Token):
 class KeywordToken(Token):
     def __init__(self, start: Position, end: Position, kind: str, tag: DomainTag = DomainTag.KEYWORD):
         super().__init__(DomainTag.KEYWORD, start, end)
+        self.attr = kind
+        
+class TypeToken(Token):
+    def __init__(self, start, end, kind):
+        super().__init__(DomainTag.TYPE, start, end)
         self.attr = kind
 
 
@@ -330,6 +337,8 @@ class Scanner:
                     if cum in COMPOUND_STMT_KEYWORDS:
                         return CompoundStmtKeywordToken(start, copy(self.cur), cum)
                     return KeywordToken(start, copy(self.cur), cum)
+                elif cum in TYPES:
+                    return TypeToken(start, copy(self.cur), cum)
                 elif cum == 'np':
                     return NumpyToken(start, copy(self.cur))
                 elif cum in BUILTIN_FUNCTIONS or cum in NUMPY_FUNCTIONS:

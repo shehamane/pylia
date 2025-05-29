@@ -1,4 +1,4 @@
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 
 from lex import *
 
@@ -43,7 +43,7 @@ class DeclarationNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.name: IdentifierToken = None
-        self.annotation: ExpressionNode = None
+        self.annotation: Any[ExpressionNode, TypeNode] = None
 
 
 class ReturnStatementNode(SyntaxNode):
@@ -66,6 +66,15 @@ class FunctionDefNode(SyntaxNode):
         self.params: Optional[ParamsNode] = None
         self.return_type: Optional[ExpressionNode] = None
         self.block: BlockNode = None
+        
+class ClassDefNode(SyntaxNode):
+    def __init__(self):
+        super().__init__()
+        self.name: IdentifierToken = None
+        self.super_name: IdentifierToken = None
+        self.block: BlockNode = None
+        self.attrs: List[IdentifierToken] = None
+        self.attr2type: Dict[IdentifierToken, ] = None
 
 
 class ParamsNode(SyntaxNode):
@@ -78,7 +87,7 @@ class ParamNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.name: IdentifierToken = None
-        self.annotation: ExpressionNode = None
+        self.annotation: Any[ExpressionNode, TypeNode] = None
 
 
 class IfStatementNode(SyntaxNode):
@@ -276,3 +285,8 @@ class ListNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.expressions: ExpressionsNode = None
+        
+class TypeNode(SyntaxNode):
+    def __init__(self):
+        super().__init__()
+        self.type: str = None
