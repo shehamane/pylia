@@ -38,7 +38,7 @@ class Position:
         return self.idx != len(self.text) and self.text[self.idx] == ' '
 
     def isLetter(self):
-        return self.idx != len(self.text) and self.text[self.idx].isalpha()
+        return self.idx != len(self.text) and self.text[self.idx].isalpha() or self.text[self.idx] == '_'
 
     def isLetterOrDigit(self):
         return self.idx != len(self.text) and \
@@ -93,6 +93,7 @@ class DomainTag(Enum):
     COMPARISON_OPERATORS = 18
     NUMPY = 19
     FUNCTION = 20
+    DECORATOR = 21
 
 
 KEYWORDS = ('if', 'else', 'for', 'while', 'continue', 'break', 'elif', 'def', 'class',
@@ -103,11 +104,10 @@ ATOM_KEYWORDS = ('None', 'True', 'False')
 SIMPLE_STMT_KEYWORDS = ('pass', 'break', 'continue')
 COMPOUND_STMT_KEYWORDS = ('def', 'for', 'while', 'if')
 SPEC_SYMBOLS = ('+', '-', '*', '/', '%', '=', '!', '(', ')', ':', '[', ']',
-                '{', '}', '.', ':', ';', '<', '>', '!', '@', ',', '&', '^')
+                '{', '}', '.', ':', ';', '<', '>', '!', ',', '&', '^')
 BINOP_SYMBOLS = ('+', '-', '*', '/', '%')
-OPERATORS = ('+', '-', '*', '/', '%', '**', '//', '@', '<<', '>>',
-             '&', '|', '^', '~', ':=', '<', '>', '<=', '>=', '==',
-             '!=')
+OPERATORS = ('+', '-', '*', '/', '%', '**', '//', '<<', '>>', '&',
+             '|', '^', '~', ':=', '<', '>', '<=', '>=', '==', '!=')
 SUM_OPERATORS = ('+', '-')
 MUL_OPERATORS = ('*', '/', '//', '%')
 POWER_OPERATORS = ('**',)
@@ -159,16 +159,21 @@ class IdentifierToken(Token):
 class NumpyToken(Token):
     def __init__(self, start: Position, end: Position):
         super().__init__(DomainTag.NUMPY, start, end)
+        
+class DecoratorToken(Token):
+    def __init__(self, start:Position, end:Position, kind: str):
+        super().__init__(DomainTag.DECORATOR, start, end)
+        self.attr = kind
 
 
 class FunctionToken(Token):
-    def __init__(self, start: Position, end: Position, kind):
+    def __init__(self, start: Position, end: Position, kind: str):
         super().__init__(DomainTag.FUNCTION, start, end)
         self.attr = kind
 
 
 class KeywordToken(Token):
-    def __init__(self, start: Position, end: Position, kind: str, tag=DomainTag.KEYWORD):
+    def __init__(self, start: Position, end: Position, kind: str, tag: DomainTag = DomainTag.KEYWORD):
         super().__init__(DomainTag.KEYWORD, start, end)
         self.attr = kind
 
@@ -379,18 +384,20 @@ class Scanner:
                 quote = self.cur.cp()
                 cum = ''
                 self.cur += 1
-                while self.cur.cp() != quote or self.cur.cp() != '\n' or self.cur.cp() != -1:
+                while self.cur.cp() != quote and self.cur.cp() != '\n' and self.cur.cp() != -1:
                     cum += self.cur.cp()
-                    self.cur += 1
 
                     if self.cur.cp() == '\\':
                         self.cur += 1
                         if self.cur.isNl():
                             self.cur += 1
-
-                if self.cur.cp() == '\n' or self.cur.cp() != -1:
+                    self.cur += 1
+                    
+                if self.cur.cp() == '\n' or self.cur.cp() == -1:
                     raise Exception('Invalid string literal')
-
+                
+                self.cur += 1
+                return StringToken(start, copy(self.cur), cum)
             elif self.cur.cp() in SPEC_SYMBOLS:
                 cum = ''
                 cum += self.cur.cp()
@@ -430,9 +437,17 @@ class Scanner:
                     return OperatorToken(start, copy(self.cur), cum)
                 if cum in DELIMITERS:
                     return DelimiterToken(start, copy(self.cur), cum)
-
+                
+            elif self.cur.cp() == '@':
+                cum = ''
+                self.cur += 1
+                while self.cur.isLetterOrDigit():
+                    cum += self.cur.cp()
+                    self.cur += 1
+                    
+                return DecoratorToken(start, copy(self.cur), cum)
             else:
-                raise Exception('Unexpected symbol')
+                raise Exception(f'Unexpected symbol: {self.cur.cp()}')
 
         if len(self.indents) > 1:
             self.indents = self.indents[:-1]

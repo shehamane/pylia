@@ -12,6 +12,7 @@ simple_stmt:
 
 compound_stmt:
     | function_def
+    | class_def
     | if_stmt
     | for_stmt
     | while_stmt
@@ -24,7 +25,11 @@ return_stmt: 'return' [expressions]
 
 block: NEWLINE INDENT statements DEDENT
 
-function_def: 'def' NAME '(' [params] ')' ['->' expression ] ':'  block
+class_def: 'class' NAME '(' [NAME] ')' ':' block
+
+function_def: [decorator NEWLINE] 'def' NAME '(' [params] ')' ['->' expression ] ':'  block
+
+decorator: '@abstractmethod' | '@staticmethod'
 
 params: ','.param+
 
