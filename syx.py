@@ -128,7 +128,8 @@ class Parser:
         self.expect(SuperKeywordToken, 'super', 'Expected "super" keyword')
         self.expect(DelimiterToken, '(', 'Error')
         if isinstance(self._sym(), IdentifierToken):
-            node.super_name = IdentifierToken
+            node.super_name = self._sym()
+            self._next()
         self.expect(DelimiterToken, ')', 'Error')        
         node.super_call = self.primary_()
         
@@ -302,9 +303,15 @@ class Parser:
                                 and isinstance(c_statement.statement.simple_statement, AssignmentNode):
                                 for decl in c_statement.statement.simple_statement.declarations:
                                     if decl.name == 'self' and decl.primary_ and decl.primary_.subscript and not decl.primary_.primary_:
-                                        node.attrs.append(decl.primary_.subscript.attr)
+                                        node.attrs.add(decl.primary_.subscript.attr)
                                         if decl.annotation and isinstance(decl.annotation, TypeNode):
                                             node.attr2type[decl.primary_.subscript.attr] = decl.annotation.type
+            if node.super_name:
+                super_node = self.compiler.get_class(node.super_name.attr)
+                for attr in super_node.attrs:
+                    node.attrs.add(attr)
+                    if attr not in node.attr2type and attr in super_node.attr2type:
+                        node.attr2type[attr] = super_node.attr2type[attr]
                                                         
         else:
             raise Exception('Class definition parsing error: Identifier expected')

@@ -1,4 +1,4 @@
-from typing import List, Any, Optional, Dict
+from typing import List, Any, Optional, Dict, Set
 
 from lex import *
 
@@ -74,7 +74,7 @@ class ClassDefNode(SyntaxNode):
         self.name: IdentifierToken = None
         self.super_name: IdentifierToken = None
         self.block: BlockNode = None
-        self.attrs: List[IdentifierToken] = []
+        self.attrs: Set[IdentifierToken] = set()
         self.attr2type: Dict[IdentifierToken, ] = {}
         
 class SuperStatementNode(SyntaxNode):
