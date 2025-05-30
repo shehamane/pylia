@@ -30,7 +30,7 @@ class CompoundStatementNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.compound_statement: Any[FunctionDefNode, IfStatementNode, ForStatementNode, WhileStatementNode] = None
-
+        
 
 class AssignmentNode(SyntaxNode):
     def __init__(self):
@@ -43,7 +43,8 @@ class DeclarationNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.name: IdentifierToken = None
-        self.annotation: Any[ExpressionNode, TypeNode] = None
+        self.primary_: PrimaryNode_ = None
+        self.annotation: Optional[Any[ExpressionNode, TypeNode]] = None
 
 
 class ReturnStatementNode(SyntaxNode):
@@ -64,7 +65,7 @@ class FunctionDefNode(SyntaxNode):
         super().__init__()
         self.name: IdentifierToken = None
         self.params: Optional[ParamsNode] = None
-        self.return_type: Optional[ExpressionNode] = None
+        self.return_type: Optional[Any[ExpressionNode, TypeNode]] = None
         self.block: BlockNode = None
         
 class ClassDefNode(SyntaxNode):
@@ -73,8 +74,14 @@ class ClassDefNode(SyntaxNode):
         self.name: IdentifierToken = None
         self.super_name: IdentifierToken = None
         self.block: BlockNode = None
-        self.attrs: List[IdentifierToken] = None
-        self.attr2type: Dict[IdentifierToken, ] = None
+        self.attrs: List[IdentifierToken] = []
+        self.attr2type: Dict[IdentifierToken, ] = {}
+        
+class SuperStatementNode(SyntaxNode):
+    def __init__(self):
+        super().__init__()
+        self.super_name: IdentifierToken = None
+        self.super_call: PrimaryNode_ = None
 
 
 class ParamsNode(SyntaxNode):
@@ -87,7 +94,7 @@ class ParamNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.name: IdentifierToken = None
-        self.annotation: Any[ExpressionNode, TypeNode] = None
+        self.annotation: Optional[Any[ExpressionNode, TypeNode]] = None
 
 
 class IfStatementNode(SyntaxNode):

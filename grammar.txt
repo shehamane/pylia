@@ -6,6 +6,7 @@ simple_stmt:
     | assignment
     | expressions
     | return_stmt
+    | 'super' '(' [NAME] ')' '.' '__init__' '(' [arguments] ')'
     | 'pass'
     | 'break'
     | 'continue'
@@ -19,7 +20,7 @@ compound_stmt:
 
 assignment: ','.(declaration)+ '=' expressions
 
-declaration: NAME [annotation]
+declaration: NAME [primary_] [annotation]
 
 return_stmt: 'return' [expressions]
 
@@ -133,10 +134,11 @@ primary_:
     | '.' NAME primary_
     | '(' [arguments] ')' primary_
     | '[' slices ']' primary_
+    | '[' expression ']' primary_
     | '.' NAME
     | '(' [arguments] ')'
     | '[' slices ']'
-
+    | '[' expression ']'
 
 arguments:
     | expression

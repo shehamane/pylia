@@ -2,11 +2,26 @@ from pyclbr import Function
 
 from syntax_tree import *
 
+class NameSpace:
+    def __init__(self):
+        self.names = []
+        self.name2code = {}
+        
+    def add(self, name):
+        if name in self.name2code:
+            return self.name_codes[name]
+        else:
+            code = len(self.names)
+            self.names.append(name)
+            self.name2code[name] = code
+            return code
+
 
 class Parser:
-    def __init__(self, seq: List[Token]):
+    def __init__(self, seq: List[Token], compiler):
         self.seq = seq
         self.i = 0
+        self.compiler = compiler
 
     def parse(self):
         return self.statements()
@@ -49,7 +64,7 @@ class Parser:
                                  SimpleStmtKeywordToken, SumOperatorToken,
                                  IdentifierToken, NumberToken,
                                  IntegerToken, FloatToken,
-                                 FunctionToken, NumpyToken) or \
+                                 FunctionToken, NumpyToken, SuperKeywordToken) or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[' or \
                 isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return':
             node.statement = self.simple_statement()
@@ -69,10 +84,22 @@ class Parser:
         # | 'break'
         # | 'continue'
         node = SimpleStatementNode()
-
-        if isinstance(self._sym(), IdentifierToken) and \
-                isinstance(self.seq[self.i + 1], DelimiterToken) and self.seq[self.i + 1].attr in ('=', ',', ':'):
-            node.simple_statement = self.assigment()
+        
+        if isinstance(self._sym(), IdentifierToken):
+            is_assign = False
+            j = 1
+            while (not isinstance(self.seq[self.i + j], (NewlineToken, EofToken))):
+                if isinstance(self.seq[self.i + j], DelimiterToken) and self.seq[self.i + j].attr == '=':
+                    is_assign = True
+                    break
+                j += 1
+                
+            if is_assign:
+                node.simple_statement = self.assigment()
+            else:
+                node.simple_statement = self.expressions()
+        elif isinstance(self._sym(), SuperKeywordToken):
+            node.simple_statement = self.super_stmt()
         elif isinstance(self._sym(), KeywordToken) and self._sym().attr == 'return':
             node.simple_statement = self.return_stmt()
         elif isinstance(self._sym(), SimpleStmtKeywordToken):
@@ -93,6 +120,18 @@ class Parser:
         elif not isinstance(self._sym(), DedentToken) and not isinstance(self._sym(), EofToken):
             raise Exception('Simple statements must be divided by newlines')
 
+        return node
+    
+    def super_stmt(self):
+        node = SuperStatementNode()
+        
+        self.expect(SuperKeywordToken, 'super', 'Expected "super" keyword')
+        self.expect(DelimiterToken, '(', 'Error')
+        if isinstance(self._sym(), IdentifierToken):
+            node.super_name = IdentifierToken
+        self.expect(DelimiterToken, ')', 'Error')        
+        node.super_call = self.primary_()
+        
         return node
 
     def assigment(self):
@@ -125,6 +164,10 @@ class Parser:
             self._next()
         else:
             raise Exception('Declaration parsing error: Identifier expected')
+        
+        if isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('.', '(', '['):
+            node.primary_ = self.primary_()
+        
         if isinstance(self._sym(), DelimiterToken) and self._sym().attr == ':':
             self._next()
             if isinstance(self._sym(), TypeToken):
@@ -160,6 +203,8 @@ class Parser:
                 node.compound_statement = self.for_stmt()
             elif self._sym().attr == 'while':
                 node.compound_statement = self.while_stmt()
+            elif self._sym().attr == 'class':
+                node.compound_statement = self.class_def()
             else:
                 raise Exception('Compound statement parsing error: Keyword expected')
         else:
@@ -213,7 +258,7 @@ class Parser:
 
             if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '->':
                 self._next()
-                node.return_type = self.expression()
+                node.return_type = self.type()
 
             self.expect(DelimiterToken, ':', 'Function definition parsing: Symbol ":" expected')
 
@@ -226,7 +271,47 @@ class Parser:
     
     def class_def(self):
         # class_def: 'class' NAME '(' [NAME] ')' ':' block
-        pass
+        node = ClassDefNode()
+        
+        self.expect(CompoundStmtKeywordToken, 'class', 'Class definition parsing error: Keyword "class" expected')
+        
+        if isinstance(self._sym(), IdentifierToken):
+            node.name = self._sym()
+            self._next()
+            
+            if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '(':
+                self._next()
+                if not isinstance(self._sym(), IdentifierToken):
+                    raise Exception('Class definition parsing error: Identifier expected')
+                
+                node.super_name = self._sym()
+                self._next()
+                
+                self.expect(DelimiterToken, ')', 'Class definition parsing error: Symbol ")" expected')
+                
+            self.expect(DelimiterToken, ':', 'Class definition parsing error: Symbol ":" expected')
+            node.block = self.block()
+            
+            for statement in node.block.statements.statements:
+                if isinstance(statement.statement, CompoundStatementNode)\
+                    and isinstance(statement.statement.compound_statement, FunctionDefNode)\
+                    and statement.statement.compound_statement.name.attr == '__init__':
+                        constructor_node = statement.statement.compound_statement
+                        for c_statement in constructor_node.block.statements.statements:
+                            if isinstance(c_statement.statement, SimpleStatementNode)\
+                                and isinstance(c_statement.statement.simple_statement, AssignmentNode):
+                                for decl in c_statement.statement.simple_statement.declarations:
+                                    if decl.name == 'self' and decl.primary_ and decl.primary_.subscript and not decl.primary_.primary_:
+                                        node.attrs.append(decl.primary_.subscript.attr)
+                                        if decl.annotation and isinstance(decl.annotation, TypeNode):
+                                            node.attr2type[decl.primary_.subscript.attr] = decl.annotation.type
+                                                        
+        else:
+            raise Exception('Class definition parsing error: Identifier expected')
+        
+        self.compiler.add_class(node)
+        
+        return node
         
 
     def if_stmt(self):
@@ -357,7 +442,7 @@ class Parser:
         if type(self._sym()) in (SumOperatorToken, IdentifierToken,
                                  AtomKeywordToken, NumberToken,
                                  IntegerToken, FloatToken,
-                                 FunctionToken, NumpyToken) or \
+                                 FunctionToken, NumpyToken, StringToken) or \
                 isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
             node.disjunction = self.disjunction()
@@ -593,7 +678,7 @@ class Parser:
         if type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
                                  NumberToken, IdentifierToken,
                                  IntegerToken, FloatToken,
-                                 FunctionToken, NumpyToken) or \
+                                 FunctionToken, NumpyToken, StringToken) or \
                 isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
             node.expressions.append(self.expression())
@@ -662,7 +747,7 @@ class Parser:
         node = AtomNode()
 
         if type(self._sym()) in (IdentifierToken, AtomKeywordToken,
-                                 NumberToken,
+                                 NumberToken, StringToken,
                                  IntegerToken, FloatToken):
             node.atom = self._sym()
             self._next()
