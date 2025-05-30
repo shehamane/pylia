@@ -128,7 +128,7 @@ NUMPY_FUNCTIONS = (
     'equal', 'less', 'greater', 'less_equal', 'greater_equal',
 )
 BUILTIN_FUNCTIONS = (
-    'print', 'len', 'range'
+    'print', 'len', 'range', 'str'
 )
 
 
@@ -345,7 +345,7 @@ class Scanner:
                     if cum in SUPER_KEYWORD:
                         return SuperKeywordToken(start, copy(self.cur), cum)
                     return KeywordToken(start, copy(self.cur), cum)
-                elif cum in TYPES:
+                elif cum in TYPES and self.cur.cp() != '(':
                     return TypeToken(start, copy(self.cur), cum)
                 elif cum == 'np':
                     return NumpyToken(start, copy(self.cur))

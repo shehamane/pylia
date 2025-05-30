@@ -1,18 +1,12 @@
-from abc import abstractmethod
-
 class Employee:
     def __init__(self, name: str):
         self.__name = name
         
-    @abstractmethod
-    def rank(self) -> str:
+    def rank(self):
         print('Not Implemented')
     
-    def greeting(self) -> str:
-        print('Hello, my names is' + self.__name + ', я ' + self.rank())
-        
-    def static_print(s: str):
-        print(s)
+    def greeting(self):
+        print(str('Hello, my names is', self.__name, ', I am ', self.rank()))
         
 
 class Welder(Employee):
@@ -21,7 +15,7 @@ class Welder(Employee):
         self.__degree = degree
         
     def rank(self) -> str:
-        return 'сварщик ' + self.__degree + ' разряда'
+        return str('welder of ', self.__degree, ' degree')
     
 
 class Manager(Employee):
@@ -30,4 +24,12 @@ class Manager(Employee):
         self.__dep = department
         
     def rank(self) -> str:
-        return 'начальник отдела ' + self.__dep
+        return str('boss of ', self.__dep)
+    
+employee = Employee('Bob')
+
+welder = Welder('Charles', 3)
+welder.greeting()
+
+manager = Manager('Alice', 'economics')
+manager.greeting()

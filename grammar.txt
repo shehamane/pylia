@@ -158,8 +158,12 @@ atom:
     | 'False'
     | 'None'
     | NUMBER
+    | STRING
+    | fstring
     | group
     | list
+
+fstring: f '"' .* ('{' expression '}') .* '"'
 
 numpy: 'np' '.' function
 
