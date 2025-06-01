@@ -89,7 +89,7 @@ class Parser:
             is_assign = False
             j = 1
             while (not isinstance(self.seq[self.i + j], (NewlineToken, EofToken))):
-                if isinstance(self.seq[self.i + j], DelimiterToken) and self.seq[self.i + j].attr == '=':
+                if isinstance(self.seq[self.i + j], DelimiterToken) and self.seq[self.i + j].attr in ('=', '+=', '-=', '*=', '/='):
                     is_assign = True
                     break
                 j += 1
@@ -148,7 +148,8 @@ class Parser:
         else:
             raise Exception('Assignment parsing error: Declaration expected')
 
-        if isinstance(self._sym(), DelimiterToken) and self._sym().attr == '=':
+        if isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('=', '+=', '-=', '*=', '/='):
+            node.op = self._sym()
             self._next()
             node.expressions = self.expressions()
         else:
@@ -295,17 +296,18 @@ class Parser:
             
             for statement in node.block.statements.statements:
                 if isinstance(statement.statement, CompoundStatementNode)\
-                    and isinstance(statement.statement.compound_statement, FunctionDefNode)\
-                    and statement.statement.compound_statement.name.attr == '__init__':
-                        constructor_node = statement.statement.compound_statement
-                        for c_statement in constructor_node.block.statements.statements:
-                            if isinstance(c_statement.statement, SimpleStatementNode)\
-                                and isinstance(c_statement.statement.simple_statement, AssignmentNode):
-                                for decl in c_statement.statement.simple_statement.declarations:
-                                    if decl.name == 'self' and decl.primary_ and decl.primary_.subscript and not decl.primary_.primary_:
-                                        node.attrs.add(decl.primary_.subscript.attr)
-                                        if decl.annotation and isinstance(decl.annotation, TypeNode):
-                                            node.attr2type[decl.primary_.subscript.attr] = decl.annotation.type
+                and isinstance(statement.statement.compound_statement, FunctionDefNode)\
+                and statement.statement.compound_statement.name.attr == '__init__':
+                    constructor_node = statement.statement.compound_statement
+                    for c_statement in constructor_node.block.statements.statements:
+                        if isinstance(c_statement.statement, SimpleStatementNode)\
+                        and isinstance(c_statement.statement.simple_statement, AssignmentNode)\
+                        and c_statement.statement.simple_statement.op.attr == '=':
+                            for decl in c_statement.statement.simple_statement.declarations:
+                                if decl.name == 'self' and decl.primary_ and decl.primary_.subscript and not decl.primary_.primary_:
+                                    node.attrs.add(decl.primary_.subscript.attr)
+                                    if decl.annotation and isinstance(decl.annotation, TypeNode):
+                                        node.attr2type[decl.primary_.subscript.attr] = decl.annotation.type
             if node.super_name:
                 super_node = self.compiler.get_class(node.super_name.attr)
                 for attr in super_node.attrs:
@@ -448,7 +450,7 @@ class Parser:
 
         if type(self._sym()) in (SumOperatorToken, IdentifierToken,
                                  AtomKeywordToken, NumberToken,
-                                 IntegerToken, FloatToken,
+                                 IntegerToken, FloatToken, FStringToken,
                                  FunctionToken, NumpyToken, StringToken) or \
                 isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
@@ -649,7 +651,7 @@ class Parser:
         if isinstance(self._sym(), DelimiterToken):
             if self._sym().attr == '.':
                 self._next()
-                if isinstance(self._sym(), IdentifierToken):
+                if isinstance(self._sym(), (IdentifierToken, FunctionToken)):
                     node.subscript = self._sym()
                     self._next()
                 else:
@@ -684,7 +686,7 @@ class Parser:
 
         if type(self._sym()) in (SumOperatorToken, AtomKeywordToken,
                                  NumberToken, IdentifierToken,
-                                 IntegerToken, FloatToken,
+                                 IntegerToken, FloatToken, FStringToken,
                                  FunctionToken, NumpyToken, StringToken) or \
                 isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
@@ -758,6 +760,8 @@ class Parser:
                                  IntegerToken, FloatToken):
             node.atom = self._sym()
             self._next()
+        elif isinstance(self._sym(), FStringToken):
+            node.atom = self.fstring()
         elif isinstance(self._sym(), DelimiterToken) and self._sym().attr == '(':
             node.atom = self.group()
         elif isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[':
@@ -768,6 +772,29 @@ class Parser:
             node.atom = self.function()
         else:
             raise Exception('Atom parsing error')
+        return node
+    
+    def fstring(self):
+        node = FStringNode()
+        
+        if isinstance(self._sym(), FStringToken):
+            self._next()
+            
+            while isinstance(self._sym(), (StringToken, FStringExprToken)):     
+                if isinstance(self._sym(), StringToken):
+                    node.content.append(self._sym())
+                    self._next()
+                elif isinstance(self._sym(), FStringExprToken):
+                    self._next()
+                    expr = self.expression()
+                    node.content.append(expr)
+                    self.expect(FStringExprToken, None, 'Error')
+                else:
+                    raise Exception('Error')
+            self.expect(FStringToken, None, 'Error')
+        else:
+            raise Exception('Error')
+        
         return node
 
     def numpy(self):
@@ -821,7 +848,13 @@ class Parser:
 
         self.expect(DelimiterToken, '[', 'List parsing error: Symbol "[" expected')
 
-        node.expressions = self.expressions()
+        if type(self._sym()) in (SumOperatorToken, IdentifierToken,
+                                 AtomKeywordToken, NumberToken,
+                                 IntegerToken, FloatToken, FStringToken,
+                                 FunctionToken, NumpyToken, StringToken) or \
+                isinstance(self._sym(), KeywordToken) and self._sym().attr == 'not' or \
+                isinstance(self._sym(), DelimiterToken) and self._sym().attr in ('(', '[', '{'):
+            node.expressions = self.expressions()
 
         self.expect(DelimiterToken, ']', 'List parsing error: Symbol "]" expected')
 

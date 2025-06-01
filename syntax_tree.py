@@ -37,6 +37,7 @@ class AssignmentNode(SyntaxNode):
         super().__init__()
         self.declarations: List[DeclarationNode] = []
         self.expressions: ExpressionsNode = None
+        self.op: DelimiterToken = None
 
 
 class DeclarationNode(SyntaxNode):
@@ -297,3 +298,8 @@ class TypeNode(SyntaxNode):
     def __init__(self):
         super().__init__()
         self.type: str = None
+
+class FStringNode(SyntaxNode):
+    def __init__(self):
+        super().__init__()
+        self.content: List[Any[ExpressionNode, StringToken]] = []

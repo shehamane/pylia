@@ -1,11 +1,7 @@
 class Animal:
-    def __init__(self, name):
-        self.name: str = name
-        self.age = None
-    
     def __init__(self, name, age: int):
         self.name: str = name
-        self.age = age
+        self.age: int = age
         
     def voice(self):
         pass
@@ -13,17 +9,17 @@ class Animal:
 class Cat(Animal):
     def __init__(self, name, age, color):
         super().__init__(name, age)
-        self.color = color
-        
-    def __init__(self, name, color):
-        super(Animal).__init__(name)
+        self.age = age
         self.color = color
         
     def voice(self):
         print('meow')
 
 animal = Animal('Bobik', 3)
-cat = Cat('Murka', 'black')
+murka = Cat('Murka', 3, 'black')
+murzik = Cat('Murzik', 2, 'ginger')
 
-print(animal)
-print(cat)
+print(murka.age)
+print(murka.color)
+print(murzik.age)
+print(murzik.name)

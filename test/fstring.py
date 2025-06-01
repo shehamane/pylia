@@ -1,0 +1,1 @@
+print(f'2 + 2 equals {2 + 2} and meow = {"meow"}')

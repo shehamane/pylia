@@ -96,6 +96,8 @@ class DomainTag(Enum):
     DECORATOR = 21
     TYPE = 22
     SUPER_KEYWORD = 23
+    FSTRING = 24
+    FSTRING_EXPR = 25
 
 
 KEYWORDS = ('if', 'else', 'for', 'while', 'continue', 'break', 'elif', 'def', 'class',
@@ -129,6 +131,9 @@ NUMPY_FUNCTIONS = (
 )
 BUILTIN_FUNCTIONS = (
     'print', 'len', 'range', 'str'
+)
+BUILTIN_METHODS = (
+    'append', 
 )
 
 
@@ -210,7 +215,14 @@ class StringToken(Token):
     def __init__(self, start: Position, end: Position, content: str):
         super().__init__(DomainTag.STRING, start, end)
         self.attr = content
-
+        
+class FStringToken(Token):
+    def __init__(self, start: Position, end: Position):
+        super().__init__(DomainTag.FSTRING, start, end)
+        
+class FStringExprToken(Token):
+    def __init__(self, start: Position, end: Position):
+        super().__init__(DomainTag.FSTRING_EXPR, start, end)
 
 class NumberToken(Token):
     def __init__(self, start: Position, end: Position, number, tag=DomainTag.NUMBER):
@@ -275,11 +287,37 @@ class Scanner:
         self.compiler = compiler
         self.last_indent = 0
         self.indents = [0]
+        self.fstring = False
+        self.fstring_expr = False
 
     def next_token(self, nl=False, dedent=False) -> Token:
         while self.cur.cp() != '$':
 
             start = copy(self.cur)
+            
+            if self.fstring:
+                if self.cur.cp() == '{':
+                    self.fstring_expr = True
+                    self.cur += 1
+                    return FStringExprToken(start, copy(self.cur))
+                elif self.fstring_expr and self.cur.cp() == '}':
+                    self.fstring_expr = False
+                    self.cur += 1
+                    return FStringExprToken(start, copy(self.cur))
+                if not self.fstring_expr:
+                    if self.cur.cp() in ('"', '\''):
+                        self.cur += 1
+                        self.fstring = False
+                        return FStringToken(start, copy(self.cur))
+                    
+                    prev_c = None
+                    cum = ""
+                    while self.cur.cp() not in ('{', '"', '\'') or prev_c == '\\':
+                        prev_c = self.cur.cp()
+                        cum += prev_c
+                        self.cur += 1
+                    return StringToken(start, copy(self.cur), cum)
+                    
 
             if dedent:
                 if self.last_indent < self.indents[-1]:
@@ -335,6 +373,10 @@ class Scanner:
                     cum += self.cur.cp()
                     self.cur += 1
 
+                if cum == 'f' and self.cur.cp() in ('\'', '"'):
+                    self.cur += 1
+                    self.fstring = True
+                    return FStringToken(start, copy(self.cur))
                 if cum in KEYWORDS:
                     if cum in ATOM_KEYWORDS:
                         return AtomKeywordToken(start, copy(self.cur), cum)
@@ -349,7 +391,7 @@ class Scanner:
                     return TypeToken(start, copy(self.cur), cum)
                 elif cum == 'np':
                     return NumpyToken(start, copy(self.cur))
-                elif cum in BUILTIN_FUNCTIONS or cum in NUMPY_FUNCTIONS:
+                elif cum in BUILTIN_FUNCTIONS or cum in NUMPY_FUNCTIONS or cum in BUILTIN_METHODS:
                     return FunctionToken(start, copy(self.cur), cum)
                 else:
                     return IdentifierToken(start, copy(self.cur), cum)

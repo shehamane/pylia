@@ -6,8 +6,7 @@ class Employee:
         print('Not Implemented')
     
     def greeting(self):
-        print(str('Hello, my names is', self.__name, ', I am ', self.rank()))
-        
+        print(f'Hello, my name is {self.__name}, I am {self.rank()}')        
 
 class Welder(Employee):
     def __init__(self, name: str, degree: int):
@@ -15,16 +14,15 @@ class Welder(Employee):
         self.__degree = degree
         
     def rank(self) -> str:
-        return str('welder of ', self.__degree, ' degree')
+        return f'welder of {self.__degree} degree'
     
-
 class Manager(Employee):
     def __init__(self, name:str, department: str):
         super().__init__(name)
         self.__dep = department
         
     def rank(self) -> str:
-        return str('boss of ', self.__dep)
+        return f'boss of {self.__dep}'
     
 employee = Employee('Bob')
 

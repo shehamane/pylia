@@ -1,8 +1,4 @@
 class Animal:
-    def __init__(self, name):
-        self.name: str = name
-        self.age = None
-    
     def __init__(self, name, age: int):
         self.name: str = name
         self.age = age
@@ -15,22 +11,19 @@ class Cat(Animal):
         super().__init__(name, age)
         self.color = color
         
-    def __init__(self, name, color):
-        super(Animal).__init__(name)
-        self.color = color
-        
     def voice(self):
         print('meow')
         
 class Kitty(Cat):
     def __init__(self, name, age):
-        super(Animal).__init__(name, age)
-        self.color = None
+        super().__init__(name, age, None)
 
 animal = Animal('Bobik', 3)
-cat = Cat('Murka', 'black')
+cat = Cat('Murka', 5, 'black')
 kitty = Kitty('Murzik', 1)
 
-print(animal)
-print(cat)
-print(kitty)
+for c in [cat, kitty]:
+    print('=====CAT=====')
+    print(c.name)
+    print(c.age)
+    print(c.color)

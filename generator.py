@@ -14,9 +14,12 @@ functions_map = {
     'log': 'log.',
     'print': 'println',
     'round': 'round.',
-    'len': 'size',
     'shape': 'size',
     'str': 'string'
+}
+
+methods_map = {
+    'append': 'push!',
 }
 
 tensor_op_map = {
@@ -42,6 +45,7 @@ class Generator:
 
     def __init__(self, compiler):
         self.compiler = compiler
+        self.cur_class = None
 
     def generate(self, tree):
         self.statements(tree)
@@ -105,13 +109,16 @@ class Generator:
                 self.program += ', '
 
         self.w()
-        self.program += '='
+        self.program += node.op.attr
         self.w()
         self.expressions(node.expressions)
 
     def declaration(self, node: DeclarationNode):
         self.program += node.name
 
+        if self.cur_class and node.name == 'self' and node.primary_\
+        and node.primary_.subscript and node.primary_.subscript.attr.startswith('__') :
+                node.primary_.subscript.attr = f'_{self.cur_class.name.attr}' + node.primary_.subscript.attr
         if node.primary_:
             self.primary_(node.primary_, None)
         elif node.annotation and isinstance(node.annotation, TypeNode):
@@ -171,15 +178,20 @@ class Generator:
             super_node = self.compiler.get_class(super_name)
             for attr in super_node.attrs:
                 self.nl()
-                self.program += f'self.{attr} = super.{attr}'
+                if attr.startswith('__'):
+                    self.program += f'self._{class_node.super_name.attr}{attr} = super._{class_node.super_name.attr}{attr}'
+                else:
+                    self.program += f'self.{attr} = super.{attr}'
         else:
             raise Exception('Error')
         
     
     def method(self, node: FunctionDefNode, class_node: ClassDefNode):
+        method_name = f'_{class_node.name.attr}{node.name.attr}' if node.name.attr.startswith('__') else node.name.attr
+        
         self.nl()
         self.program += 'function call('
-        self.program += f'self::{get_abstract_name(class_node.name.attr)}, ::Val' + '{' + f':{node.name.attr}' + '}'
+        self.program += f'self::{get_abstract_name(class_node.name.attr)}, ::Val' + '{' + f':{method_name}' + '}'
             
         if node.params and len(node.params.params) > 1:
             self.program += ', '
@@ -226,6 +238,8 @@ class Generator:
                 
         
     def class_def(self, node: ClassDefNode):
+        self.cur_class = node
+        
         self.nl()
         abstract_name = get_abstract_name(node.name.attr)
         self.program += f'abstract type {abstract_name}'
@@ -240,17 +254,23 @@ class Generator:
         self.indent()
         for attr in node.attrs:
             self.nl()
-            self.program += attr
+            if attr.startswith('__'):
+                self.program += f'_{node.name.attr}{attr}'
+            else:
+                self.program += attr
             if attr in node.attr2type:
                 self.program += f'::{types_map[node.attr2type[attr]]}'
                 
         if node.super_name:
             super_node = self.compiler.get_class(node.super_name.attr)
             for attr in super_node.attrs:
-                if attr in node.attrs:
+                if not attr.startswith('__') and attr in node.attrs:
                     continue
                 self.nl()
-                self.program += attr
+                if attr.startswith('__'):
+                    self.program += f'_{node.super_name.attr}{attr}'
+                else:
+                    self.program += attr
                 if attr in super_node.attr2type:
                     self.program += f'::{types_map[super_node.attr2type[attr]]}'
         
@@ -270,6 +290,8 @@ class Generator:
                 if func_def_node.name.attr == '__init__':
                     continue
                 self.method(statement.statement.compound_statement, node)
+                
+        self.cur_class = None
 
 
     def params(self, node: ParamsNode, class_node: ClassDefNode = None, constructor: bool = False):
@@ -413,18 +435,23 @@ class Generator:
 
     def power(self, node: PowerNode):
         self.primary(node.primary)
-        if node.op:
-            self.program += node.op.attr
+        if node.factor:
+            self.program += '^'
             self.factor(node.factor)
 
     def primary(self, node: PrimaryNode):
+        if self.cur_class and isinstance(node.atom.atom, IdentifierToken) and node.atom.atom.attr == 'self'\
+            and node.primary_ and node.primary_.subscript and node.primary_.subscript.attr.startswith('__'):
+                node.primary_.subscript.attr = f'_{self.cur_class.name.attr}' + node.primary_.subscript.attr
         primary_start_idx=len(self.program)
         self.atom(node.atom)
         if node.primary_:
             self.primary_(node.primary_, primary_start_idx)
 
     def primary_(self, node: PrimaryNode_, primary_start_idx):
-        if node.subscript and node.subscript.attr not in self.compiler.classes and node.primary_ and node.primary_.arguments and not node.primary_.primary_:
+        if node.subscript and node.subscript.attr not in self.compiler.classes\
+        and node.primary_ and node.primary_.arguments and not node.primary_.primary_\
+        and node.subscript.attr not in methods_map:
             fragment = self.program[primary_start_idx:]
             self.program = self.program[:primary_start_idx]
             self.program += f'call({fragment}, Val(:{node.subscript.attr})'
@@ -454,8 +481,21 @@ class Generator:
                             self.program += ', '
                 self.program += ')'
         elif node.subscript is not None:
-            self.program += '.'
-            self.program += node.subscript.attr
+            if node.subscript.attr in methods_map:
+                fragment = self.program[primary_start_idx:]
+                self.program = self.program[:primary_start_idx]
+                self.program += f'{methods_map[node.subscript.attr]}({fragment}'
+                if node.primary_ and node.primary_.arguments and len(node.primary_.arguments.expressions):
+                    self.program += ', '
+                    for i, expr in enumerate(node.primary_.arguments.expressions):
+                        self.expression(expr)
+                        if i < len(node.primary_.arguments.expressions) - 1:
+                            self.program += ', '
+                    node.primary_ = node.primary_.primary_
+                self.program += ')'
+            else:
+                self.program += '.'
+                self.program += node.subscript.attr
         elif node.slices is not None:
             self.program += '['
             self.slices(node.slices)
@@ -478,12 +518,17 @@ class Generator:
     def slice(self, node: SliceNode):
         if node.from_expression:
             self.expression(node.from_expression)
+            self.program += '+ 1'
+        elif node.to_expression or node.step_expression:
+            self.program += '1'
         if node.to_expression:
             self.program += ':'
             self.expression(node.to_expression)
+            self.program += ' - 1'
         if node.step_expression:
             self.program += ':'
             self.expression(node.step_expression)
+            
 
     def atom(self, node: AtomNode):
         if isinstance(node.atom, IdentifierToken):
@@ -499,6 +544,8 @@ class Generator:
             self.program += str(node.atom.attr)
         elif isinstance(node.atom, StringToken):
             self.program += f'"{node.atom.attr}"'
+        elif isinstance(node.atom, FStringNode):
+            self.fstring(node.atom)
         elif isinstance(node.atom, GroupNode):
             self.group(node.atom)
         elif isinstance(node.atom, ListNode):
@@ -526,18 +573,25 @@ class Generator:
             self.program += '('
             self.arguments(node.arguments)
             self.program += ')'
+        elif node.name == 'len':
+            self.program += 'size('
+            self.arguments(node.arguments)
+            self.program += ', 1)'
         elif node.name == 'range':
             if len(node.arguments.expressions) == 1:
-                self.program += '1:'
+                self.program += '0:'
                 self.expression(node.arguments.expressions[0])
+                self.program += ' - 1'
             elif len(node.arguments.expressions) == 2:
                 self.expression(node.arguments.expressions[0])
                 self.program += ':'
                 self.expression(node.arguments.expressions[1])
+                self.program += ' - 1'
             elif len(node.arguments.expressions) == 3:
                 self.expression(node.arguments.expressions[0])
                 self.program += ':'
                 self.expression(node.arguments.expressions[2])
+                self.program += ' - 1'
                 self.program += ':'
                 self.expression(node.arguments.expressions[1])
             else:
@@ -547,6 +601,17 @@ class Generator:
             self.program += '('
             self.arguments(node.arguments)
             self.program += ')'
+            
+    def fstring(self, node: FStringNode):
+        self.program += '"'
+        for child in node.content:
+            if isinstance(child, StringToken):
+                self.program += child.attr
+            elif isinstance(child, ExpressionNode):
+                self.program += '$('
+                self.expression(child)
+                self.program += ')'
+        self.program += '"'
 
     def group(self, node: GroupNode):
         self.program += '('
@@ -555,7 +620,8 @@ class Generator:
 
     def list(self, node: ListNode):
         self.program += '['
-        self.expressions(node.expressions)
+        if node.expressions:
+            self.expressions(node.expressions)
         self.program += ']'
         
     def type(self, node: TypeNode):
