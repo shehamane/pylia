@@ -46,6 +46,9 @@ class Generator:
     def __init__(self, compiler):
         self.compiler = compiler
         self.cur_class = None
+        
+    def _is_private(self, name: str):
+        return name.startswith('__') and not name.endswith('__')
 
     def generate(self, tree):
         self.statements(tree)
@@ -64,23 +67,23 @@ class Generator:
     def dedent(self):
         self.indent_count -= 1
 
-    def statements(self, node: StatementsNode, class_node: ClassDefNode = None):
+    def statements(self, node: StatementsNode):
         for i, statement in enumerate(node.statements):
-            self.statement(statement, class_node)
+            self.statement(statement)
             if i < len(node.statements) - 1:
                 self.nl()
 
-    def statement(self, node: StatementNode, class_node: ClassDefNode = None):
+    def statement(self, node: StatementNode):
         if isinstance(node.statement, SimpleStatementNode):
-            self.simple_statement(node.statement, class_node)
+            self.simple_statement(node.statement)
         elif isinstance(node.statement, CompoundStatementNode):
             self.compound_statement(node.statement)
 
-    def simple_statement(self, node: SimpleStatementNode, class_node: ClassDefNode = None):
+    def simple_statement(self, node: SimpleStatementNode):
         if isinstance(node.simple_statement, AssignmentNode):
             self.assignment(node.simple_statement)
         elif isinstance(node.simple_statement, SuperStatementNode):
-            self.super_stmt(node.simple_statement, class_node)
+            self.super_stmt(node.simple_statement)
         elif isinstance(node.simple_statement, ExpressionsNode):
             self.expressions(node.simple_statement)
         elif isinstance(node.simple_statement, SimpleStmtKeywordToken):
@@ -103,25 +106,42 @@ class Generator:
             self.class_def(node.compound_statement)
 
     def assignment(self, node: AssignmentNode):
-        for i, declaration in enumerate(node.declarations):
-            self.declaration(declaration)
-            if i < len(node.declarations) - 1:
-                self.program += ', '
+        for decl, expr in zip(node.declarations, node.expressions.expressions):
+            cur_node = decl
+            prev_node = None
+            while cur_node.primary_:
+                prev_node = cur_node
+                cur_node = cur_node.primary_
+                
+            if prev_node and cur_node.subscript:
+                subscript = cur_node.subscript
+                if self.cur_class and self._is_private(subscript.attr):    
+                    subscript_name = f'_{self.cur_class.name.attr}{subscript.attr}'
+                else:
+                    subscript_name = subscript.attr
+                prev_node.primary_ = None
+                self.program += f'setattr!('
+                self.declaration(decl, hint=False)
+                self.program += f', :{subscript_name}, '
+                self.expression(expr)
+                self.program += ')'
+                prev_node.primary_ = cur_node
+            else:
+                self.declaration(decl)
+                self.program += f' {node.op.attr} '
+                self.expression(expr)
+                self.nl()
 
-        self.w()
-        self.program += node.op.attr
-        self.w()
-        self.expressions(node.expressions)
-
-    def declaration(self, node: DeclarationNode):
+    def declaration(self, node: DeclarationNode, hint: bool = True):
+        primary_start_idx = len(self.program)
         self.program += node.name
 
         if self.cur_class and node.name == 'self' and node.primary_\
-        and node.primary_.subscript and node.primary_.subscript.attr.startswith('__') :
+        and node.primary_.subscript and self._is_private(node.primary_.subscript.attr):
                 node.primary_.subscript.attr = f'_{self.cur_class.name.attr}' + node.primary_.subscript.attr
         if node.primary_:
-            self.primary_(node.primary_, None)
-        elif node.annotation and isinstance(node.annotation, TypeNode):
+            self.primary_(node.primary_, primary_start_idx)
+        elif hint and node.annotation and isinstance(node.annotation, TypeNode):
             self.program += '::'
             self.type(node.annotation)
 
@@ -130,19 +150,22 @@ class Generator:
         self.w()
         self.expressions(node.expressions)
 
-    def block(self, node: BlockNode, class_node: ClassDefNode = None, constructor: bool = False):
+    def block(self, node: BlockNode, constructor: bool = False, end: bool = True):
         self.indent()
         self.nl()
-        self.statements(node.statements, class_node)
+        self.statements(node.statements)
         
         if constructor:
+            self.nl()
             self.nl()
             self.program += 'return self'
             
         self.dedent()
         self.nl()
         
-        self.program += 'end'
+        if end:
+            self.program += 'end'
+            self.nl()
 
     def function_def(self, node: FunctionDefNode):
         self.nl()
@@ -163,39 +186,65 @@ class Generator:
         self.block(node.block)
         self.nl()
         
-    def super_stmt(self, node: SuperStatementNode, class_node: ClassDefNode):
+    def super_stmt(self, node: SuperStatementNode):
+        class_node = self.cur_class
+        if class_node is None:
+            raise Exception('Error')
+        
         if node.super_name:
             super_name = node.super_name.attr
         else:
             super_name = class_node.super_name.attr
             
-        if node.super_call.subscript and node.super_call.subscript.attr == '__init__' and node.super_call.primary_:
-            self.program += f'super = '
-            primary_start_idx = len(self.program)
-            self.program += super_name
-            self.primary_(node.super_call.primary_, primary_start_idx)
+        # Вызов метода суперкласса
+        if node.super_call.subscript and node.super_call.primary_ and node.super_call.primary_.arguments:
+            if self._is_private(node.super_call.subscript.attr):
+                node.super_call.subscript.attr = f'_{super_name}' + node.super_call.subscript.attr
             
-            super_node = self.compiler.get_class(super_name)
-            for attr in super_node.attrs:
-                self.nl()
-                if attr.startswith('__'):
-                    self.program += f'self._{class_node.super_name.attr}{attr} = super._{class_node.super_name.attr}{attr}'
-                else:
-                    self.program += f'self.{attr} = super.{attr}'
+            self.program += f'call(Val(:{super_name}), Val(:{node.super_call.subscript.attr}), self'
+            
+            if node.super_call.primary_.arguments.expressions:
+                self.program += ', '
+                for i, expr in enumerate(node.super_call.primary_.arguments.expressions):
+                    self.expression(expr)
+                    if i < len(node.super_call.primary_.arguments.expressions) - 1:
+                        self.program += ', '
+            self.program += ')'
         else:
             raise Exception('Error')
         
     
     def method(self, node: FunctionDefNode, class_node: ClassDefNode):
-        method_name = f'_{class_node.name.attr}{node.name.attr}' if node.name.attr.startswith('__') else node.name.attr
+        method_name = f'_{class_node.name.attr}{node.name.attr}' if self._is_private(node.name.attr) else node.name.attr
         
+        if node.params.params[0].name.attr == 'self':
+            self.nl()
+            self.program += 'function call('
+            
+            self.program += f'::Val' + '{' + f':{method_name}' + '}' + f', self::{get_abstract_name(class_node.name.attr)}'
+
+            if node.params and len(node.params.params) > 1:
+                self.program += ', '
+                for i, param in enumerate(node.params.params[1:]):
+                    self.param(param)
+                    if i < len(node.params.params) - 2:
+                        self.program += ', '
+            self.program += ')'
+            if node.return_type:
+                self.program += '::'
+                self.type(node.return_type)
+            
+            self.block(node.block, constructor=(node.name.attr == '__init__'))
+            self.nl()
+            
         self.nl()
         self.program += 'function call('
-        self.program += f'self::{get_abstract_name(class_node.name.attr)}, ::Val' + '{' + f':{method_name}' + '}'
+        
+        self.program += f'::Val' + '{' + f':{class_node.name.attr}' + '}, ' + f'::Val' + '{' + f':{method_name}' + '}'
             
-        if node.params and len(node.params.params) > 1:
+        if node.params and len(node.params.params):
             self.program += ', '
-            for i, param in enumerate(node.params.params[1:]):
+            for i, param in enumerate(node.params.params):
                 self.param(param)
                 if i < len(node.params.params) - 1:
                     self.program += ', '
@@ -204,37 +253,70 @@ class Generator:
             self.program += '::'
             self.type(node.return_type)
         
-        self.block(node.block)
+        self.block(node.block, constructor=(node.name.attr == '__init__'))
         self.nl()
         
         
     def constructor(self, node: ClassDefNode):
-        for stmt in node.block.statements.statements:
-            if isinstance(stmt.statement, CompoundStatementNode) \
-            and isinstance(stmt.statement.compound_statement, FunctionDefNode) \
-            and stmt.statement.compound_statement.name.attr == '__init__':
-                constructor_statement = stmt.statement.compound_statement
-                
-                self.program += 'function'
-                self.w()
-                self.program += node.name.attr
-                self.program += '('
-                if constructor_statement.params:
-                    self.params(constructor_statement.params, node, True)
-                self.program += ')'
-                
-                if constructor_statement.return_type and isinstance(constructor_statement.return_type, TypeNode):
-                    self.program += '::'
-                    self.type(constructor_statement.return_type)
-                    
-                self.indent()
-                self.nl()
-                self.program += 'self = new()'
-                self.dedent()
-                self.nl()
-
-                self.block(constructor_statement.block, node, True)
-                self.nl()
+        self.program += f'function {node.name.attr}()'
+        self.indent()
+        self.nl()
+        self.program += 'x = new()'
+        self.nl()
+        self.program += 'x.__dynamic_attrs = Dict()'
+        self.nl()
+        self.program += 'return x'
+        self.dedent()
+        self.nl()
+        self.program += 'end'
+        
+    def getter(self, abstract_name):
+        self.program += f'function getattr(self::{abstract_name}, attr::Symbol)'
+        self.indent()
+        self.nl()
+        self.program += 'if hasproperty(self, attr)'
+        self.indent()
+        self.nl()
+        self.program += 'return getproperty(self, attr)'
+        self.dedent()
+        self.nl()
+        self.program += 'elseif haskey(self.__dynamic_attrs, attr)'
+        self.indent()
+        self.nl()
+        self.program += 'return self.__dynamic_attrs[attr]'
+        self.dedent()
+        self.nl()
+        self.program += 'else'
+        self.indent()
+        self.nl()
+        self.program += 'throw("Error: No such attribute")'
+        self.dedent()
+        self.nl()
+        self.program += 'end'
+        self.dedent()
+        self.nl()
+        self.program += 'end'
+        
+    def setter(self, abstract_name):
+        self.program += f'function setattr!(self::{abstract_name}, attr::Symbol, val)'
+        self.indent()
+        self.nl()
+        self.program += 'if hasproperty(self, attr)'
+        self.indent()
+        self.nl()
+        self.program += 'setproperty!(self, attr, val)'
+        self.dedent()
+        self.nl()
+        self.program += 'else'
+        self.indent()
+        self.nl()
+        self.program += 'self.__dynamic_attrs[attr] = val'
+        self.dedent()
+        self.nl()
+        self.program += 'end'
+        self.dedent()
+        self.nl()
+        self.program += 'end'
                 
         
     def class_def(self, node: ClassDefNode):
@@ -252,9 +334,11 @@ class Generator:
         self.program += f'mutable struct {node.name.attr} <: {abstract_name}'
         
         self.indent()
+        self.nl()
+        self.program += '__dynamic_attrs::Dict'
         for attr in node.attrs:
             self.nl()
-            if attr.startswith('__'):
+            if self._is_private(attr):
                 self.program += f'_{node.name.attr}{attr}'
             else:
                 self.program += attr
@@ -264,10 +348,10 @@ class Generator:
         if node.super_name:
             super_node = self.compiler.get_class(node.super_name.attr)
             for attr in super_node.attrs:
-                if not attr.startswith('__') and attr in node.attrs:
+                if not self._is_private(attr) and attr in node.attrs:
                     continue
                 self.nl()
-                if attr.startswith('__'):
+                if self._is_private(attr):
                     self.program += f'_{node.super_name.attr}{attr}'
                 else:
                     self.program += attr
@@ -284,12 +368,39 @@ class Generator:
         self.program += 'end'
         self.nl()
         
+        if not node.has_init:
+            self.nl()
+            self.program += f'function call(::Val' + '{' + f':{node.name.attr}' + '}, ::Val{:__init__}, self)'
+            self.indent()
+            self.nl()
+            self.program += f'return self'
+            self.dedent()
+            self.nl()
+            self.program += 'end'
+            self.nl()
+            self.nl()
+            self.program += 'function call(::Val{:__init__}, ' + f'self::{abstract_name})'
+            self.indent()
+            self.nl()
+            self.program += f'return self'
+            self.dedent()
+            self.nl()
+            self.program += 'end'
+            self.nl()
+            
+        self.nl()
+        self.getter(abstract_name)
+        self.nl()
+        self.nl()
+        self.setter(abstract_name)
+        self.nl()
+            
+        
         for statement in node.block.statements.statements:
             if isinstance(statement.statement, CompoundStatementNode) and isinstance(statement.statement.compound_statement, FunctionDefNode):
                 func_def_node = statement.statement.compound_statement
-                if func_def_node.name.attr == '__init__':
-                    continue
-                self.method(statement.statement.compound_statement, node)
+                
+                self.method(func_def_node, node)
                 
         self.cur_class = None
 
@@ -314,11 +425,12 @@ class Generator:
         self.program += '('
         self.expression(node.condition)
         self.program += ')'
-        self.block(node.block)
+        self.block(node.block, end=False)
         if isinstance(node.else_block, ElifStatementNode):
             self.elif_stmt(node.else_block)
         elif isinstance(node.else_block, ElseBlockNode):
             self.else_stmt(node.else_block)
+        self.program += 'end'
 
     def elif_stmt(self, node: ElifStatementNode):
         self.program += 'elseif'
@@ -326,7 +438,7 @@ class Generator:
         self.program += '('
         self.expression(node.condition)
         self.program += ')'
-        self.block(node.block)
+        self.block(node.block, end=False)
         if isinstance(node.else_block, ElifStatementNode):
             self.elif_stmt(node.else_block)
         elif isinstance(node.else_block, ElseBlockNode):
@@ -335,7 +447,7 @@ class Generator:
     def else_stmt(self, node: ElseBlockNode):
         self.program += 'else'
         self.w()
-        self.block(node.block)
+        self.block(node.block, end=False)
 
     def while_stmt(self, node: WhileStatementNode):
         self.program += 'while'
@@ -441,7 +553,7 @@ class Generator:
 
     def primary(self, node: PrimaryNode):
         if self.cur_class and isinstance(node.atom.atom, IdentifierToken) and node.atom.atom.attr == 'self'\
-            and node.primary_ and node.primary_.subscript and node.primary_.subscript.attr.startswith('__'):
+            and node.primary_ and node.primary_.subscript and self._is_private(node.primary_.subscript.attr):
                 node.primary_.subscript.attr = f'_{self.cur_class.name.attr}' + node.primary_.subscript.attr
         primary_start_idx=len(self.program)
         self.atom(node.atom)
@@ -449,12 +561,15 @@ class Generator:
             self.primary_(node.primary_, primary_start_idx)
 
     def primary_(self, node: PrimaryNode_, primary_start_idx):
-        if node.subscript and node.subscript.attr not in self.compiler.classes\
-        and node.primary_ and node.primary_.arguments and not node.primary_.primary_\
-        and node.subscript.attr not in methods_map:
-            fragment = self.program[primary_start_idx:]
+        fragment = self.program[primary_start_idx:]
+        
+        # Вызов статического метода
+        if node.subscript and fragment in self.compiler.classes\
+        and node.primary_ and node.primary_.arguments:
+            if self._is_private(node.subscript.attr):
+                node.subscript.attr = f'_{fragment}' + node.subscript.attr
             self.program = self.program[:primary_start_idx]
-            self.program += f'call({fragment}, Val(:{node.subscript.attr})'
+            self.program += f'call(Val(:{fragment}), Val(:{node.subscript.attr})'
             if node.primary_.arguments.expressions:
                 self.program += ', '
                 for i, expr in enumerate(node.primary_.arguments.expressions):
@@ -462,14 +577,38 @@ class Generator:
                     if i < len(node.primary_.arguments.expressions) - 1:
                         self.program += ', '
             self.program += ')'
-            return
+            node.primary_ = node.primary_.primary_
         
-        if node.arguments:
-            fragment = self.program[primary_start_idx:]
+        # Вызов метода
+        elif node.subscript and fragment not in self.compiler.classes\
+        and node.primary_ and node.primary_.arguments\
+        and node.subscript.attr not in methods_map:
+            if self._is_private(node.subscript.attr):
+                node.subscript.attr = f'_{fragment}' + node.subscript.attr
+            self.program = self.program[:primary_start_idx]
+            self.program += f'call(Val(:{node.subscript.attr}), {fragment}'
+            if node.primary_.arguments.expressions:
+                self.program += ', '
+                for i, expr in enumerate(node.primary_.arguments.expressions):
+                    self.expression(expr)
+                    if i < len(node.primary_.arguments.expressions) - 1:
+                        self.program += ', '
+            self.program += ')'
+            node.primary_ = node.primary_.primary_
+        elif node.arguments:
+            # Вызов конструктора
             if fragment in self.compiler.classes:
-                self.program += '('
-                self.arguments(node.arguments)
+                constructor_name = f'__init__'
+                self.program = self.program[:primary_start_idx]
+                self.program += f'call(Val(:{constructor_name}), {fragment}()'
+                if node.arguments.expressions:
+                    self.program += ', '
+                    for i, expr in enumerate(node.arguments.expressions):
+                        self.expression(expr)
+                        if i < len(node.arguments.expressions) - 1:
+                            self.program += ', '
                 self.program += ')'
+            # Вызов функции
             else:
                 self.program = self.program[:primary_start_idx]
                 self.program += f'call(Val(:{fragment})'
@@ -481,11 +620,11 @@ class Generator:
                             self.program += ', '
                 self.program += ')'
         elif node.subscript is not None:
-            if node.subscript.attr in methods_map:
+            if node.primary_ and node.primary_.arguments and node.subscript.attr in methods_map:
                 fragment = self.program[primary_start_idx:]
                 self.program = self.program[:primary_start_idx]
                 self.program += f'{methods_map[node.subscript.attr]}({fragment}'
-                if node.primary_ and node.primary_.arguments and len(node.primary_.arguments.expressions):
+                if len(node.primary_.arguments.expressions):
                     self.program += ', '
                     for i, expr in enumerate(node.primary_.arguments.expressions):
                         self.expression(expr)
@@ -493,9 +632,10 @@ class Generator:
                             self.program += ', '
                     node.primary_ = node.primary_.primary_
                 self.program += ')'
-            else:
-                self.program += '.'
-                self.program += node.subscript.attr
+            elif not (node.primary_ and node.primary_.arguments):
+                # доступ к полям
+                self.program = self.program[:primary_start_idx]
+                self.program += f'getattr({fragment}, :{node.subscript.attr})'
         elif node.slices is not None:
             self.program += '['
             self.slices(node.slices)

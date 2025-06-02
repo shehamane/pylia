@@ -1,7 +1,7 @@
 from typing import Dict, List
 
 from generator import Generator
-from lex import Scanner, EofToken, DedentToken, NewlineToken
+from lex import Scanner, EofToken, DedentToken, NewlineToken, CommentToken
 from syx import Parser, ClassDefNode
 
 
@@ -51,6 +51,8 @@ class Compiler:
         dedent = False
         while not isinstance(token, EofToken):
             token = scanner.next_token(nl, dedent)
+            if isinstance(token, CommentToken):
+                continue
             self.tokens.append(token)
 
             nl = isinstance(token, NewlineToken)

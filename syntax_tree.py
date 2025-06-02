@@ -77,6 +77,7 @@ class ClassDefNode(SyntaxNode):
         self.block: BlockNode = None
         self.attrs: Set[IdentifierToken] = set()
         self.attr2type: Dict[IdentifierToken, ] = {}
+        self.has_init: bool = False
         
 class SuperStatementNode(SyntaxNode):
     def __init__(self):

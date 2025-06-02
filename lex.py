@@ -98,6 +98,7 @@ class DomainTag(Enum):
     SUPER_KEYWORD = 23
     FSTRING = 24
     FSTRING_EXPR = 25
+    COMMENT = 26
 
 
 KEYWORDS = ('if', 'else', 'for', 'while', 'continue', 'break', 'elif', 'def', 'class',
@@ -271,6 +272,9 @@ class DelimiterToken(Token):
         super().__init__(DomainTag.DELIMITER, start, end)
         self.attr = kind
 
+class CommentToken(Token):
+    def __init__(self, start, end):
+        super().__init__(DomainTag.COMMENT, start, end)
 
 class EofToken(Token):
     def __init__(self, start: Position, end: Position):
@@ -396,6 +400,15 @@ class Scanner:
                 else:
                     return IdentifierToken(start, copy(self.cur), cum)
 
+            elif self.cur.cp() == '#':
+                cum = ''
+                self.cur += 1
+                while not self.cur.isNl():
+                    cum += self.cur.cp()
+                    self.cur += 1
+                    
+                return CommentToken(start, copy(self.cur))
+                
             elif self.cur.cp().isdigit():
                 cum = ''
                 while self.cur.cp().isdigit():

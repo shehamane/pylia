@@ -15,7 +15,7 @@ class Cat(Animal):
         print('meow')
         
 class Kitty(Cat):
-    def __init__(self, name, age):
+    def __init__(self, name, age: int):
         super().__init__(name, age, None)
 
 animal = Animal('Bobik', 3)

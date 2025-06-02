@@ -22,6 +22,7 @@ class Parser:
         self.seq = seq
         self.i = 0
         self.compiler = compiler
+        self.cur_class = None
 
     def parse(self):
         return self.statements()
@@ -31,6 +32,30 @@ class Parser:
 
     def _sym(self):
         return self.seq[self.i]
+    
+    def _search_constructor(self, statements: StatementsNode):
+        for statement in statements.statements:
+            if isinstance(statement.statement, CompoundStatementNode)\
+            and isinstance(statement.statement.compound_statement, FunctionDefNode)\
+            and statement.statement.compound_statement.name.attr == '__init__':
+                return statement.statement.compound_statement
+        return None
+            
+    def _select_attrs_from_constructor(self, constructor: FunctionDefNode):
+        attrs = []
+        types = []
+        for c_statement in constructor.block.statements.statements:
+            if isinstance(c_statement.statement, SimpleStatementNode)\
+            and isinstance(c_statement.statement.simple_statement, AssignmentNode)\
+            and c_statement.statement.simple_statement.op.attr == '=':
+                for decl in c_statement.statement.simple_statement.declarations:
+                    if decl.name == 'self' and decl.primary_ and decl.primary_.subscript and not decl.primary_.primary_:
+                        attrs.append(decl.primary_.subscript.attr)
+                        if decl.annotation and isinstance(decl.annotation, TypeNode):
+                            types.append(decl.annotation.type)
+                        else:
+                            types.append(None)
+        return attrs, types
 
     def expect(self, type_, attr, message):
         if isinstance(self._sym(), type_) and (attr is None or self._sym().attr == attr):
@@ -47,7 +72,7 @@ class Parser:
         while type(self._sym()) in (IdentifierToken, AtomKeywordToken,
                                     SimpleStmtKeywordToken, SumOperatorToken,
                                     IdentifierToken, NumberToken,
-                                    IntegerToken, FloatToken,
+                                    IntegerToken, FloatToken, SuperKeywordToken,
                                     FunctionToken, NumpyToken,
                                     CompoundStmtKeywordToken) or \
                 isinstance(self._sym(), DelimiterToken) and self._sym().attr == '[' or \
@@ -176,6 +201,13 @@ class Parser:
                 node.annotation = self.type()
             else:
                 node.annotation = self.expression()
+                
+        if self.cur_class is not None:
+            if node.name == 'self' and node.primary_ and node.primary_.subscript and not node.primary_.primary_:
+                self.cur_class.attrs.add(node.primary_.subscript.attr)
+                if node.annotation and isinstance(node.annotation, TypeNode):
+                    self.cur_class.attr2type[node.name] = node.annotation.type
+            
         return node
 
     def return_stmt(self):
@@ -250,6 +282,9 @@ class Parser:
         if isinstance(self._sym(), IdentifierToken):
             node.name = self._sym()
             self._next()
+            
+            if self.cur_class is not None and node.name.attr == '__init__':
+                self.cur_class.has_init = True
 
             self.expect(DelimiterToken, '(', 'Function definition parsing: Symbol "(" expected')
 
@@ -274,6 +309,7 @@ class Parser:
     def class_def(self):
         # class_def: 'class' NAME '(' [NAME] ')' ':' block
         node = ClassDefNode()
+        self.cur_class = node
         
         self.expect(CompoundStmtKeywordToken, 'class', 'Class definition parsing error: Keyword "class" expected')
         
@@ -292,33 +328,21 @@ class Parser:
                 self.expect(DelimiterToken, ')', 'Class definition parsing error: Symbol ")" expected')
                 
             self.expect(DelimiterToken, ':', 'Class definition parsing error: Symbol ":" expected')
-            node.block = self.block()
+            node.block = self.block()   
             
-            for statement in node.block.statements.statements:
-                if isinstance(statement.statement, CompoundStatementNode)\
-                and isinstance(statement.statement.compound_statement, FunctionDefNode)\
-                and statement.statement.compound_statement.name.attr == '__init__':
-                    constructor_node = statement.statement.compound_statement
-                    for c_statement in constructor_node.block.statements.statements:
-                        if isinstance(c_statement.statement, SimpleStatementNode)\
-                        and isinstance(c_statement.statement.simple_statement, AssignmentNode)\
-                        and c_statement.statement.simple_statement.op.attr == '=':
-                            for decl in c_statement.statement.simple_statement.declarations:
-                                if decl.name == 'self' and decl.primary_ and decl.primary_.subscript and not decl.primary_.primary_:
-                                    node.attrs.add(decl.primary_.subscript.attr)
-                                    if decl.annotation and isinstance(decl.annotation, TypeNode):
-                                        node.attr2type[decl.primary_.subscript.attr] = decl.annotation.type
             if node.super_name:
                 super_node = self.compiler.get_class(node.super_name.attr)
                 for attr in super_node.attrs:
                     node.attrs.add(attr)
                     if attr not in node.attr2type and attr in super_node.attr2type:
-                        node.attr2type[attr] = super_node.attr2type[attr]
-                                                        
+                        node.attr2type[attr] = super_node.attr2type[attr]                
         else:
             raise Exception('Class definition parsing error: Identifier expected')
         
+        
         self.compiler.add_class(node)
+        
+        self.cur_class = None
         
         return node
         
